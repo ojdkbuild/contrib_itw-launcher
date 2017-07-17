@@ -1,0 +1,7 @@
+#define UNICODE
+#define _UNICODE
+#include <windows.h>
+
+111 ICON "${${PROJECT_NAME}_ICON_PATH}"
+2   RT_MANIFEST "${${PROJECT_NAME}_MANIFEST_PATH}"
+
