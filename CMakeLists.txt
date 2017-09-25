@@ -16,7 +16,7 @@ cmake_minimum_required ( VERSION 2.8.12 )
 
 project ( itw_launcher C CXX )
 
-set ( ${PROJECT_NAME}_ICON_PATH ${CMAKE_CURRENT_LIST_DIR}/resources/icon.ico CACHE STRING "Path to icon file" )
+set ( ${PROJECT_NAME}_ICON_PATH ${openjdk_INSTALLER_RESOURCES_PATH}/icon.ico CACHE STRING "Path to icon file" )
 set ( ${PROJECT_NAME}_MANIFEST_PATH ${CMAKE_CURRENT_LIST_DIR}/resources/launcher.manifest CACHE STRING "Path to checker manifest" )
 
 configure_file ( ${CMAKE_CURRENT_LIST_DIR}/resources/launcher.rc

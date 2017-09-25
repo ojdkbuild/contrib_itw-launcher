@@ -1,6 +1,4 @@
 
-#define _WIN32_WINNT 0x600
-
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -15,7 +13,6 @@
 #ifndef NOMINMAX
 #  define NOMINMAX
 #endif // NOMINMAX
-#define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <commctrl.h>
 #include <shlobj.h>
@@ -571,10 +568,6 @@ std::string find_java_exe() {
 } // namespace
 
 int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR lpCmdLine, int) {
-    //static std::string next_jar = "../share/icedtea-web/netx.jar";
-    static std::string netx_jar = "netx.jar";
-    static std::string xboot_prefix = "-Xbootclasspath/a:";
-    static std::string main_class = "net.sourceforge.jnlp.runtime.Boot";
     static std::string log_dir_name = "IcedTeaWeb/";
     static std::string log_file_name = "javaws_last_log.txt";
     try {
@@ -585,8 +578,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR lpCmdLine, int) {
         auto localdir = itw::process_dir();
         std::string java = itw::find_java_exe();
         std::vector<std::string> args;
-        args.emplace_back(xboot_prefix + localdir + netx_jar);
-        args.emplace_back(main_class);
+        args.emplace_back("-Xbootclasspath/a:" + localdir + "lib.jar");
+        args.emplace_back("-splash:" + localdir + "javaws_splash.png");
+        args.emplace_back("net.sourceforge.jnlp.runtime.Boot");
         args.emplace_back(cline);
         auto uddir = itw::userdata_dir();
         auto logdir = uddir + log_dir_name;
