@@ -1,10 +1,25 @@
+/*
+ * Copyright 2016 akashche at redhat.com
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
-#include <cstdint>
+#include <stdint.h>
 #include <cstdlib>
 #include <cstring>
 #include <algorithm>
 #include <exception>
-#include <functional>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -19,48 +34,47 @@
 #include <shellapi.h>
 #include <knownfolders.h>
 
-// msvc2013 compat
-
-#if defined(__MINGW32__) || (defined(_MSC_VER) && _MSC_VER >= 1900)
+#if defined(_MSC_VER) && _MSC_VER >= 1900
 #define ITW_NOEXCEPT noexcept
 #define ITW_NOEXCEPT_SUPPORTED
-#else // MSVC 2013
+#else // MSVC 2010, 2013
 #define ITW_NOEXCEPT
 #endif
 
-// mingw-w64 compat
-
-#ifdef __MINGW32__
-const GUID ITW_FOLDERID_LocalAppData = { 0xF1B32785, 0x6FBA, 0x4FCF, { 0x9D, 0x55, 0x7B, 0x8E, 0x7F, 0x15, 0x70, 0x91 } };
-#else // MSVC
-const GUID ITW_FOLDERID_LocalAppData = FOLDERID_LocalAppData;
-#endif //__MINGW32__
-
-// implementation
-
 namespace itw {
 
-namespace detail_defer {
+// C++11 utils
+
+template<typename T>
+std::string itw_to_string(const T& obj) {
+    std::stringstream ss;
+    ss << obj;
+    return ss.str();
+}
+
+template<typename T>
+T* itw_addressof(T& t) {
+    return &t;
+}
+
+// golang's defer
 
 // http://stackoverflow.com/a/17356259/314015
 template<typename T>
 class defer_guard {
     T func;
-    bool moved_out = false;
+    mutable bool moved_out;
     
+    defer_guard& operator=(const defer_guard&);
 public:
     explicit defer_guard(T func) :
-    func(std::move(func)) { }
+    func(func),
+    moved_out(false) { }
 
-    defer_guard(const defer_guard&) = delete;
-    defer_guard& operator=(const defer_guard&) = delete;
-    
-    defer_guard(defer_guard&& other) ITW_NOEXCEPT :
-    func(std::move(other.func)) {
+    defer_guard(const defer_guard&) :
+    func(other.func) {
         other.moved_out = true;
     }
-
-    defer_guard& operator=(defer_guard&&) = delete;
 
     ~defer_guard() ITW_NOEXCEPT {
 #ifdef ITW_NOEXCEPT_SUPPORTED
@@ -74,18 +88,39 @@ public:
     }
 };
 
-} // namespace
-
 template<typename T>
-detail_defer::defer_guard<T> defer(T func) {
-    return detail_defer::defer_guard<T>(std::move(func));
+defer_guard<T> defer(T func) {
+    return defer_guard<T>(func);
 }
 
+// "lambda" for C++98
+
+template<typename Func, typename Arg>
+class itw_lambda {
+    Func func;
+    Arg arg;
+public:
+    itw_lambda(Func func, Arg arg) :
+    func(func),
+    arg(arg) { }
+
+    void operator()() ITW_NOEXCEPT {
+        func(arg);
+    }
+};
+
+template<typename Func, typename Arg>
+itw_lambda<Func, Arg> make_itw_lambda(Func func, Arg arg) {
+    return itw_lambda<Func, Arg>(func, arg);
+}
+
+// forward declaration
 std::string errcode_to_string(unsigned long code) ITW_NOEXCEPT;
 
+// exception with message
 class itw_exception : public std::exception {
 protected:
-    std::string message{};
+    std::string message;
 
 public:
     itw_exception(const std::string& message) :
@@ -95,6 +130,8 @@ public:
         return message.c_str();
     }
 };
+
+// implementation
 
 std::wstring widen(const std::string& st) {
     int size_needed = ::MultiByteToWideChar(
@@ -115,7 +152,7 @@ std::wstring widen(const std::string& st) {
             0,
             st.c_str(),
             static_cast<int>(st.size()),
-            std::addressof(res.front()),
+            itw_addressof(res.front()),
             size_needed);
     if (chars_copied != size_needed) {
         throw itw_exception(std::string("Error on string widen execution,") +
@@ -136,7 +173,7 @@ std::string narrow(const wchar_t* wstring, size_t length) {
             nullptr);
     if (0 == size_needed) {
         throw itw_exception(std::string("Error on string narrow calculation,") +
-            " string length: [" + std::to_string(length) + "], error code: [" + std::to_string(::GetLastError()) + "]");
+            " string length: [" + itw_to_string(length) + "], error code: [" + itw_to_string(::GetLastError()) + "]");
     }
     auto vec = std::vector<char>();
     vec.resize(size_needed);
@@ -151,7 +188,7 @@ std::string narrow(const wchar_t* wstring, size_t length) {
             nullptr);
     if (bytes_copied != size_needed) {
         throw itw_exception(std::string("Error on string narrow execution,") +
-            " string length: [" + std::to_string(vec.size()) + "], error code: [" + std::to_string(::GetLastError()) + "]");
+            " string length: [" + itw_to_string(vec.size()) + "], error code: [" + itw_to_string(::GetLastError()) + "]");
     }
     return std::string(vec.begin(), vec.end());
 }
@@ -170,20 +207,18 @@ std::string errcode_to_string(unsigned long code) ITW_NOEXCEPT {
             0,
             nullptr);
     if (0 == size) {
-        return "Cannot format code: [" + std::to_string(code) + "]" +
-            " into message, error code: [" + std::to_string(::GetLastError()) + "]";
+        return "Cannot format code: [" + itw_to_string(code) + "]" +
+            " into message, error code: [" + itw_to_string(::GetLastError()) + "]";
     }
-    auto deferred = defer([buf]() ITW_NOEXCEPT {
-        ::LocalFree(buf);
-    });
+    auto deferred = defer(make_itw_lambda(::LocalFree, buf));
     if (size <= 2) {
-        return "code: [" + std::to_string(code) + "], message: []";
+        return "code: [" + itw_to_string(code) + "], message: []";
     }
     try {
         std::string msg = narrow(buf, size - 2);
-        return "code: [" + std::to_string(code) + "], message: [" + msg + "]";
+        return "code: [" + itw_to_string(code) + "], message: [" + msg + "]";
     } catch(const std::exception& e) {
-        return "Cannot format code: [" + std::to_string(code) + "]" +
+        return "Cannot format code: [" + itw_to_string(code) + "]" +
             " into message, narrow error: [" + e.what() + "]";
     }
 }
@@ -208,16 +243,14 @@ std::string process_dir() {
 std::string userdata_dir() {
     wchar_t* wbuf = nullptr;
     auto err = ::SHGetKnownFolderPath(
-            ITW_FOLDERID_LocalAppData,
+            FOLDERID_LocalAppData,
             KF_FLAG_CREATE,
             nullptr,
-            std::addressof(wbuf));
+            itw_addressof(wbuf));
     if (S_OK != err || nullptr == wbuf) {
         throw itw_exception("Error getting userdata dir");
     }
-    auto deferred = defer([wbuf]() ITW_NOEXCEPT {
-        ::CoTaskMemFree(wbuf);
-    });
+    auto deferred = defer(make_itw_lambda(::CoTaskMemFree, wbuf));
     auto path = narrow(wbuf, ::wcslen(wbuf));
     std::replace(path.begin(), path.end(), '\\', '/');
     path.push_back('/');
@@ -227,7 +260,7 @@ std::string userdata_dir() {
 void create_dir(const std::string& dirpath) {
     auto wpath = widen(dirpath);
     BOOL err = ::CreateDirectoryW(
-            std::addressof(wpath.front()),
+            itw_addressof(wpath.front()),
             nullptr);
     if (0 == err && ERROR_ALREADY_EXISTS != ::GetLastError()) {
         throw itw_exception(std::string("Error getting creating dir,") +
@@ -243,10 +276,10 @@ int start_process(const std::string& executable, const std::vector<std::string>&
     sa.lpSecurityDescriptor = nullptr;
     sa.bInheritHandle = TRUE; 
     HANDLE out_handle = ::CreateFileW(
-            std::addressof(wout.front()), 
+            itw_addressof(wout.front()), 
             FILE_WRITE_DATA | FILE_APPEND_DATA,
             FILE_SHARE_WRITE | FILE_SHARE_READ,
-            std::addressof(sa),
+            itw_addressof(sa),
             CREATE_ALWAYS,
             FILE_ATTRIBUTE_NORMAL,
             nullptr);
@@ -255,9 +288,7 @@ int start_process(const std::string& executable, const std::vector<std::string>&
                 " message: [" + errcode_to_string(::GetLastError()) + "]," +
                 " specified out path: [" + out + "]");
     }
-    auto deferred_outhandle = defer([out_handle]() ITW_NOEXCEPT {
-        ::CloseHandle(out_handle);
-    });
+    auto deferred_outhandle = defer(make_itw_lambda(::CloseHandle, out_handle));
 
     // prepare list of handles to inherit
     // see: https://blogs.msdn.microsoft.com/oldnewthing/20111216-00/?p=8873
@@ -266,7 +297,7 @@ int start_process(const std::string& executable, const std::vector<std::string>&
             nullptr,
             1,
             0,
-            std::addressof(tasize));
+            itw_addressof(tasize));
     
     if (0 != err_tasize || ::GetLastError() != ERROR_INSUFFICIENT_BUFFER) {
         throw itw_exception(std::string("Error preparing attrlist,") + 
@@ -277,26 +308,22 @@ int start_process(const std::string& executable, const std::vector<std::string>&
         throw itw_exception(std::string("Error preparing attrlist,") + 
                 " message: [" + errcode_to_string(::GetLastError()) + "]");
     }
-    auto deferred_talist = defer([talist]() ITW_NOEXCEPT {
-        std::free(talist);
-    });
+    auto deferred_talist = defer(make_itw_lambda(std::free, talist));
     auto err_ta = ::InitializeProcThreadAttributeList(
             talist,
             1,
             0,
-            std::addressof(tasize));
+            itw_addressof(tasize));
     if (0 == err_ta) {
         throw itw_exception(std::string("Error initializing attrlist,") + 
                 " message: [" + errcode_to_string(::GetLastError()) + "]");
     }
-    auto deferred_talist_delete = defer([talist]() ITW_NOEXCEPT {
-        ::DeleteProcThreadAttributeList(talist);
-    });
+    auto deferred_talist_delete = defer(make_itw_lambda(::DeleteProcThreadAttributeList, talist));
     auto err_taset = ::UpdateProcThreadAttribute(
         talist,
         0,
         PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
-        std::addressof(out_handle),
+        itw_addressof(out_handle),
         sizeof(HANDLE),
         nullptr,
         nullptr); 
@@ -307,40 +334,36 @@ int start_process(const std::string& executable, const std::vector<std::string>&
 
     // prepare process
     STARTUPINFOEXW si;
-    std::memset(std::addressof(si), 0, sizeof(STARTUPINFOEXW));
-    si.StartupInfo = [out_handle] {
-        STARTUPINFOW info;
-        std::memset(std::addressof(info), 0, sizeof(STARTUPINFOW));
-        info.dwFlags = STARTF_USESTDHANDLES;
-        info.hStdInput = nullptr;
-        info.hStdError = out_handle;
-        info.hStdOutput = out_handle;
-        return info;
-    }();
+    std::memset(itw_addressof(si), 0, sizeof(STARTUPINFOEXW));
+    std::memset(itw_addressof(si.StartupInfo), 0, sizeof(STARTUPINFOW));
+    si.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+    si.StartupInfo.hStdInput = nullptr;
+    si.StartupInfo.hStdError = out_handle;
+    si.StartupInfo.hStdOutput = out_handle;
     si.StartupInfo.cb = sizeof(si);
     si.lpAttributeList = talist;
 
     PROCESS_INFORMATION pi;
-    memset(std::addressof(pi), 0, sizeof(PROCESS_INFORMATION));
+    memset(itw_addressof(pi), 0, sizeof(PROCESS_INFORMATION));
     std::string cmd_string = "\"" + executable + "\"";
-    for (const std::string& arg : args) {
+    for (size_t i = 0; i < args.size(); i++) {
         cmd_string += " ";
-        cmd_string += arg;
+        cmd_string += args.at(i);
     }
 
     // run process
     auto wcmd = widen(cmd_string);
     auto ret = ::CreateProcessW(
             nullptr, 
-            std::addressof(wcmd.front()), 
+            itw_addressof(wcmd.front()), 
             nullptr, 
             nullptr, 
             true, 
             CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS | CREATE_UNICODE_ENVIRONMENT | EXTENDED_STARTUPINFO_PRESENT, 
             nullptr, 
             nullptr, 
-            std::addressof(si.StartupInfo), 
-            std::addressof(pi));
+            itw_addressof(si.StartupInfo), 
+            itw_addressof(pi));
     if (0 == ret) {
         throw itw_exception(std::string("Process create error: [") + errcode_to_string(::GetLastError()) + "]," +
             " command line: [" + cmd_string + "]");
@@ -392,11 +415,11 @@ void show_error_dialog(const std::string& error) {
     std::wstring werror = widen(error);
 
     TASKDIALOGCONFIG cf;
-    // memset(std::addressof(cf), '\0', sizeof(TASKDIALOGCONFIG));
+    std::memset(itw_addressof(cf), '\0', sizeof(TASKDIALOGCONFIG));
     cf.cbSize = sizeof(TASKDIALOGCONFIG);
     cf.hwndParent = nullptr;
     cf.hInstance = ::GetModuleHandleW(nullptr);
-    cf.dwFlags = TDF_ENABLE_HYPERLINKS | TDF_EXPAND_FOOTER_AREA | TDF_ALLOW_DIALOG_CANCELLATION | TDF_SIZE_TO_CONTENT;
+    cf.dwFlags = TDF_ENABLE_HYPERLINKS | TDF_EXPAND_FOOTER_AREA | TDF_ALLOW_DIALOG_CANCELLATION /* | TDF_SIZE_TO_CONTENT */ ; 
     cf.dwCommonButtons = TDCBF_CLOSE_BUTTON;
     cf.pszWindowTitle = wtitle.c_str();
     cf.pszMainIcon = MAKEINTRESOURCEW(111);
@@ -419,7 +442,7 @@ void show_error_dialog(const std::string& error) {
     cf.cxWidth = 0;
     
     ::TaskDialogIndirect(
-            std::addressof(cf),
+            itw_addressof(cf),
             nullptr,
             nullptr,
             nullptr);
@@ -439,15 +462,13 @@ std::string find_java_exe() {
             wjdk_key_name.c_str(), 
             0,
             KEY_READ | KEY_ENUMERATE_SUB_KEYS,
-            std::addressof(jdk_key));
+            itw_addressof(jdk_key));
     if (ERROR_SUCCESS != err_jdk) {
         throw itw_exception(std::string("Error opening registry key,") +
                 " name: [" + jdk_key_name + "]," +
                 " message: [" + errcode_to_string(err_jdk) + "]");
     }
-    auto deferred_jdk = defer([jdk_key]() ITW_NOEXCEPT {
-        ::RegCloseKey(jdk_key);
-    });
+    auto deferred_jdk = defer(make_itw_lambda(::RegCloseKey, jdk_key));
     // identify buffer size for children
     DWORD subkeys_num = 0;
     DWORD max_subkey_len = 0;
@@ -456,8 +477,8 @@ std::string find_java_exe() {
             nullptr,
             nullptr,
             nullptr,
-            std::addressof(subkeys_num),
-            std::addressof(max_subkey_len),
+            itw_addressof(subkeys_num),
+            itw_addressof(max_subkey_len),
             nullptr,
             nullptr,
             nullptr,
@@ -480,8 +501,8 @@ std::string find_java_exe() {
         auto err_enum = ::RegEnumKeyExW(
                 jdk_key,
                 i,
-                std::addressof(subkey_buf.front()),
-                std::addressof(len),
+                itw_addressof(subkey_buf.front()),
+                itw_addressof(len),
                 nullptr,
                 nullptr,
                 nullptr,
@@ -496,7 +517,8 @@ std::string find_java_exe() {
     // look for prefix match
     std::sort(vec.begin(), vec.end());
     std::string versions;
-    for (auto& el : vec) {
+    for (size_t i = 0; i < vec.size(); i++) {
+        std::string& el = vec.at(i);
         if (!versions.empty()) {
             versions.append(", ");
         }
@@ -511,15 +533,13 @@ std::string find_java_exe() {
                     wsubkey_name.c_str(), 
                     0,
                     KEY_READ,
-                    std::addressof(jdk_subkey));
+                    itw_addressof(jdk_subkey));
             if (ERROR_SUCCESS != err_jdk_subkey) {
                 throw itw_exception(std::string("Error opening registry key,") +
                         " name: [" + subkey_name + "]," +
                         " message: [" + errcode_to_string(err_jdk_subkey) + "]");
             }
-            auto deferred_sub = defer([jdk_subkey]() ITW_NOEXCEPT {
-                ::RegCloseKey(jdk_subkey);
-            });
+            auto deferred_sub = defer(make_itw_lambda(::RegCloseKey, jdk_subkey));
             // find out value len
             DWORD value_len = 0;
             DWORD value_type = 0;
@@ -527,9 +547,9 @@ std::string find_java_exe() {
                     jdk_subkey,
                     wjava_home.c_str(),
                     nullptr,
-                    std::addressof(value_type),
+                    itw_addressof(value_type),
                     nullptr,
-                    std::addressof(value_len));
+                    itw_addressof(value_len));
             if (ERROR_SUCCESS != err_len || !(value_len > 0) || REG_SZ != value_type) {
                 throw itw_exception(std::string("Error opening registry value len,") +
                         " key: [" + subkey_name + "]," +
@@ -544,8 +564,8 @@ std::string find_java_exe() {
                     wjava_home.c_str(),
                     nullptr,
                     nullptr,
-                    reinterpret_cast<LPBYTE>(std::addressof(wvalue.front())),
-                    std::addressof(value_len));
+                    reinterpret_cast<LPBYTE>(itw_addressof(wvalue.front())),
+                    itw_addressof(value_len));
             if (ERROR_SUCCESS != err_val) {
                 throw itw_exception(std::string("Error opening registry value,") +
                         " key: [" + subkey_name + "]," +
@@ -578,10 +598,10 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR lpCmdLine, int) {
         auto localdir = itw::process_dir();
         std::string java = itw::find_java_exe();
         std::vector<std::string> args;
-        args.emplace_back("-Xbootclasspath/a:" + localdir + "lib.jar");
-        args.emplace_back("-splash:" + localdir + "javaws_splash.png");
-        args.emplace_back("net.sourceforge.jnlp.runtime.Boot");
-        args.emplace_back(cline);
+        args.push_back("-Xbootclasspath/a:" + localdir + "lib.jar");
+        args.push_back("-splash:" + localdir + "javaws_splash.png");
+        args.push_back("net.sourceforge.jnlp.runtime.Boot");
+        args.push_back(cline);
         auto uddir = itw::userdata_dir();
         auto logdir = uddir + log_dir_name;
         itw::create_dir(logdir);
