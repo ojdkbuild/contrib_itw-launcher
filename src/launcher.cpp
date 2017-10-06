@@ -353,6 +353,7 @@ int start_process(const std::string& executable, const std::vector<std::string>&
 
     // run process
     auto wcmd = widen(cmd_string);
+    //::MessageBox(NULL, wcmd.c_str(), widen("foo").c_str(), MB_OK);
     auto ret = ::CreateProcessW(
             nullptr, 
             itw_addressof(wcmd.front()), 
@@ -448,165 +449,38 @@ void show_error_dialog(const std::string& error) {
             nullptr);
 }
 
-std::string find_java_exe() {
-    static std::string jdk_key_name = "SOFTWARE\\JavaSoft\\Java Development Kit";
-    static std::wstring wjdk_key_name = widen(jdk_key_name);
-    static std::string jdk_prefix = "1.8.0";
-    static std::string java_home = "JavaHome";
-    static std::wstring wjava_home = widen("JavaHome");
-    static std::string java_exe_postfix = "bin/java.exe";
-    // open root
-    HKEY jdk_key;
-    auto err_jdk = ::RegOpenKeyExW(
-            HKEY_LOCAL_MACHINE,
-            wjdk_key_name.c_str(), 
-            0,
-            KEY_READ | KEY_ENUMERATE_SUB_KEYS,
-            itw_addressof(jdk_key));
-    if (ERROR_SUCCESS != err_jdk) {
-        throw itw_exception(std::string("Error opening registry key,") +
-                " name: [" + jdk_key_name + "]," +
-                " message: [" + errcode_to_string(err_jdk) + "]");
-    }
-    auto deferred_jdk = defer(make_itw_lambda(::RegCloseKey, jdk_key));
-    // identify buffer size for children
-    DWORD subkeys_num = 0;
-    DWORD max_subkey_len = 0;
-    auto err_info = ::RegQueryInfoKeyW(
-            jdk_key,
-            nullptr,
-            nullptr,
-            nullptr,
-            itw_addressof(subkeys_num),
-            itw_addressof(max_subkey_len),
-            nullptr,
-            nullptr,
-            nullptr,
-            nullptr,
-            nullptr,
-            nullptr);
-    if (ERROR_SUCCESS != err_info) {
-        throw itw_exception(std::string("Error querieing registry key,") +
-                " name: [" + jdk_key_name + "]," +
-                " message: [" + errcode_to_string(err_info) + "]");
-    }
-    // collect children names
-    auto vec = std::vector<std::string>();
-    vec.reserve(subkeys_num);
-    max_subkey_len += 1; // NUL-terminator
-    std::wstring subkey_buf;
-    subkey_buf.resize(max_subkey_len);
-    for (DWORD i = 0; i < subkeys_num; i++) {
-        DWORD len = max_subkey_len;
-        auto err_enum = ::RegEnumKeyExW(
-                jdk_key,
-                i,
-                itw_addressof(subkey_buf.front()),
-                itw_addressof(len),
-                nullptr,
-                nullptr,
-                nullptr,
-                nullptr);
-        if (ERROR_SUCCESS != err_enum) {
-            throw itw_exception(std::string("Error enumerating registry key,") +
-                    " name: [" + jdk_key_name + "]," +
-                    " message: [" + errcode_to_string(err_enum) + "]");
-        }
-        vec.emplace_back(narrow(subkey_buf.data(), len));
-    }
-    // look for prefix match
-    std::sort(vec.begin(), vec.end());
-    std::string versions;
-    for (size_t i = 0; i < vec.size(); i++) {
-        std::string& el = vec.at(i);
-        if (!versions.empty()) {
-            versions.append(", ");
-        }
-        versions.append(el);
-        if (0 == el.compare(0, jdk_prefix.length(), jdk_prefix)) {
-            // found match, open it
-            std::string subkey_name = jdk_key_name + "\\" + el;
-            std::wstring wsubkey_name = widen(subkey_name);
-            HKEY jdk_subkey;
-            auto err_jdk_subkey = ::RegOpenKeyExW(
-                    HKEY_LOCAL_MACHINE,
-                    wsubkey_name.c_str(), 
-                    0,
-                    KEY_READ,
-                    itw_addressof(jdk_subkey));
-            if (ERROR_SUCCESS != err_jdk_subkey) {
-                throw itw_exception(std::string("Error opening registry key,") +
-                        " name: [" + subkey_name + "]," +
-                        " message: [" + errcode_to_string(err_jdk_subkey) + "]");
-            }
-            auto deferred_sub = defer(make_itw_lambda(::RegCloseKey, jdk_subkey));
-            // find out value len
-            DWORD value_len = 0;
-            DWORD value_type = 0;
-            auto err_len = ::RegQueryValueExW(
-                    jdk_subkey,
-                    wjava_home.c_str(),
-                    nullptr,
-                    itw_addressof(value_type),
-                    nullptr,
-                    itw_addressof(value_len));
-            if (ERROR_SUCCESS != err_len || !(value_len > 0) || REG_SZ != value_type) {
-                throw itw_exception(std::string("Error opening registry value len,") +
-                        " key: [" + subkey_name + "]," +
-                        " value: [" + java_home + "]," +
-                        " message: [" + errcode_to_string(err_len) + "]");
-            }
-            // get value
-            std::wstring wvalue;
-            wvalue.resize(((value_len)/sizeof(wchar_t)));
-            auto err_val = ::RegQueryValueExW(
-                    jdk_subkey,
-                    wjava_home.c_str(),
-                    nullptr,
-                    nullptr,
-                    reinterpret_cast<LPBYTE>(itw_addressof(wvalue.front())),
-                    itw_addressof(value_len));
-            if (ERROR_SUCCESS != err_val) {
-                throw itw_exception(std::string("Error opening registry value,") +
-                        " key: [" + subkey_name + "]," +
-                        " value: [" + java_home + "]," +
-                        " message: [" + errcode_to_string(err_val) + "]");
-            }
-            // format and return path
-            std::string jpath = narrow(wvalue.data(), wvalue.length() - 1);
-            std::replace(jpath.begin(), jpath.end(), '\\', '/');
-            if ('/' != jpath[jpath.length() - 1]) {
-                jpath.push_back('/');
-            }
-            jpath.append(java_exe_postfix);
-            return jpath;
-        }
-    }
-    throw itw_exception("JDK 8 runtime directory not found, please install JDK 8, available versions: [" + versions + "].");
-}
-
 } // namespace
 
 int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR lpCmdLine, int) {
     static std::string log_dir_name = "IcedTeaWeb/";
     static std::string log_file_name = "javaws_last_log.txt";
+    static std::string jvm_flags = "-XX:+TieredCompilation -XX:TieredStopAtLevel=1 -XX:+UseSerialGC -XX:MinHeapFreeRatio=20 -XX:MaxHeapFreeRatio=40";
     try {
         auto cline = std::string(lpCmdLine);
         if (cline.empty()) {
             throw itw::itw_exception("No arguments specified. Please specify a path to JNLP file or a 'jnlp://' URL.");
         }
         auto localdir = itw::process_dir();
-        std::string java = itw::find_java_exe();
+        //auto userdir = itw::userdata_dir();
+        auto jdkdir = localdir + "../";
+        auto java_exe = jdkdir + "bin/java.exe";
         std::vector<std::string> args;
-        args.push_back("-Xbootclasspath/a:" + localdir + "lib.jar");
-        args.push_back("-splash:" + localdir + "javaws_splash.png");
+        args.push_back(jvm_flags);
+        args.push_back("-splash:\"" + localdir + "javaws_splash.png\"");
+        args.push_back("-Xbootclasspath/a:\"" + localdir + "javaws.jar\"");
+        args.push_back("-classpath");
+        args.push_back("\"" + jdkdir + "jre/lib/rt.jar\"");
+        //args.push_back("-Duser.home=\"" + userdir + "\"");
+        args.push_back("-Dicedtea-web.bin.name=javaws.exe");
+        args.push_back("-Dicedtea-web.bin.location=\"" + localdir + "javaws.exe\"");
         args.push_back("net.sourceforge.jnlp.runtime.Boot");
+        args.push_back("-Xnofork");
         args.push_back(cline);
         auto uddir = itw::userdata_dir();
         auto logdir = uddir + log_dir_name;
         itw::create_dir(logdir);
         auto logfile = logdir + log_file_name;
-        itw::start_process(java, args, logfile);
+        itw::start_process(java_exe, args, logfile);
         return 0;
     } catch (const std::exception& e) {
         itw::show_error_dialog(e.what());
