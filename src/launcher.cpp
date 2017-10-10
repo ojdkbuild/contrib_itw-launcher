@@ -351,9 +351,21 @@ int start_process(const std::string& executable, const std::vector<std::string>&
         cmd_string += args.at(i);
     }
 
+    // log cmdline
+    auto cmd_string_log = "Starting NetX, command: [" + cmd_string + "]\r\n";
+    auto err_logcmd = ::WriteFile(
+        out_handle,
+        cmd_string_log.c_str(),
+        static_cast<DWORD>(cmd_string_log.length()),
+        nullptr,
+        nullptr);
+    if (0 == err_logcmd) {
+        throw itw_exception(std::string("Error logging cmdline,") + 
+                " message: [" + errcode_to_string(::GetLastError()) + "]");
+    }
+
     // run process
     auto wcmd = widen(cmd_string);
-    //::MessageBox(NULL, wcmd.c_str(), widen("foo").c_str(), MB_OK);
     auto ret = ::CreateProcessW(
             nullptr, 
             itw_addressof(wcmd.front()), 
@@ -461,23 +473,23 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR lpCmdLine, int) {
             throw itw::itw_exception("No arguments specified. Please specify a path to JNLP file or a 'jnlp://' URL.");
         }
         auto localdir = itw::process_dir();
-        //auto userdir = itw::userdata_dir();
+        auto uddir = itw::userdata_dir();
+        auto logdir = uddir + log_dir_name;
         auto jdkdir = localdir + "../";
         auto java_exe = jdkdir + "bin/java.exe";
         std::vector<std::string> args;
         args.push_back(jvm_flags);
+        //args.push_back("-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=5005");
         args.push_back("-splash:\"" + localdir + "javaws_splash.png\"");
         args.push_back("-Xbootclasspath/a:\"" + localdir + "javaws.jar\"");
         args.push_back("-classpath");
         args.push_back("\"" + jdkdir + "jre/lib/rt.jar\"");
-        //args.push_back("-Duser.home=\"" + userdir + "\"");
+        args.push_back("-Ditw.userdata=\"" + logdir + "\"");
         args.push_back("-Dicedtea-web.bin.name=javaws.exe");
         args.push_back("-Dicedtea-web.bin.location=\"" + localdir + "javaws.exe\"");
         args.push_back("net.sourceforge.jnlp.runtime.Boot");
         args.push_back("-Xnofork");
         args.push_back(cline);
-        auto uddir = itw::userdata_dir();
-        auto logdir = uddir + log_dir_name;
         itw::create_dir(logdir);
         auto logfile = logdir + log_file_name;
         itw::start_process(java_exe, args, logfile);
