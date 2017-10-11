@@ -1,7 +1,64 @@
+/*
+ * Copyright 2017 akashche at redhat.com
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+#include "launcher.hpp"
+
 #define UNICODE
 #define _UNICODE
 #include <windows.h>
 
-111 ICON "${${PROJECT_NAME}_ICON_PATH}"
-2   RT_MANIFEST "${${PROJECT_NAME}_MANIFEST_PATH}"
+LANGUAGE 9, 1
+#pragma code_page(1252)
 
+111 ICON "${${PROJECT_NAME}_ICON_PATH}"
+
+1 VERSIONINFO
+FILEVERSION     ${${PROJECT_NAME}_EXE_VERSION}
+PRODUCTVERSION  ${${PROJECT_NAME}_EXE_VERSION}
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904E4"
+        BEGIN
+            VALUE "CompanyName", "${${PROJECT_NAME}_COMPANY_NAME_LABEL}"
+            VALUE "FileDescription", "${${PROJECT_NAME}_FILE_DESCRIPTION_JAVAWS}"
+            VALUE "FileVersion", "${${PROJECT_NAME}_FILE_VERSION}"
+            VALUE "InternalName", "javaws"
+            VALUE "LegalCopyright", "${${PROJECT_NAME}_COMPANY_NAME_LABEL}"
+            VALUE "OriginalFilename", "javaws.exe"
+            VALUE "ProductName", "${${PROJECT_NAME}_FILE_DESCRIPTION_JAVAWS}"
+            VALUE "ProductVersion", "${${PROJECT_NAME}_PRODUCT_VERSION}"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0409, 0x04E4
+    END
+END
+1 RT_MANIFEST "${${PROJECT_NAME}_MANIFEST_PATH}"
+
+STRINGTABLE
+BEGIN
+    IDS_VENDOR_DIRNAME "${openjdk_VENDOR_DIRNAME}"
+    IDS_APP_DIRNAME "${openjdk_IMAGE}"
+    IDS_ERROR_DIALOG_TITLE "${${PROJECT_NAME}_ERROR_DIALOG_TITLE_LABEL}"
+    IDS_BROWSER_ERROR_TEXT "${${PROJECT_NAME}_BROWSER_ERROR_TEXT_LABEL}"
+    IDS_ERROR_HELP_URL "${${PROJECT_NAME}_ERROR_HELP_URL_LABEL}"
+    IDS_ERROR_DIALOG_HEADER "${${PROJECT_NAME}_ERROR_DIALOG_HEADER_LABEL}"
+    IDS_ERROR_DIALOG_SUBHEADER "${${PROJECT_NAME}_ERROR_DIALOG_SUBHEADER_LABEL}"
+    IDS_JVM_OPTIONS "${${PROJECT_NAME}_JVM_OPTIONS}"
+    IDS_NO_ARGS_ERROR_MESSAGE "${${PROJECT_NAME}_NO_ARGS_ERROR_MESSAGE_LABEL}"
+END

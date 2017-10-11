@@ -14,11 +14,14 @@
  * limitations under the License.
  */
 
+#include "launcher.hpp"
+
 #include <stdint.h>
 #include <cstdlib>
 #include <cstring>
 #include <algorithm>
 #include <exception>
+#include <iterator>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -34,12 +37,20 @@
 #include <shellapi.h>
 #include <knownfolders.h>
 
+// http://svn.wxwidgets.org/viewvc/wx/wxWidgets/trunk/src/msw/msgdlg.cpp?r1=70409&r2=70408&pathrev=70409
+#ifndef TDF_SIZE_TO_CONTENT
+#define TDF_SIZE_TO_CONTENT 0x1000000
+#endif
+
 #if defined(_MSC_VER) && _MSC_VER >= 1900
 #define ITW_NOEXCEPT noexcept
 #define ITW_NOEXCEPT_SUPPORTED
 #else // MSVC 2010, 2013
 #define ITW_NOEXCEPT
 #endif
+
+const size_t ITW_MAX_RC_LEN = 1 << 12;
+HINSTANCE ITW_HANDLE_INSTANCE = nullptr;
 
 namespace itw {
 
@@ -193,6 +204,10 @@ std::string narrow(const wchar_t* wstring, size_t length) {
     return std::string(vec.begin(), vec.end());
 }
 
+std::string narrow(const std::wstring& wstring) {
+    return narrow(wstring.c_str(), wstring.length());
+}
+
 std::string errcode_to_string(unsigned long code) ITW_NOEXCEPT {
     if (0 == code) {
         return std::string();
@@ -221,6 +236,28 @@ std::string errcode_to_string(unsigned long code) ITW_NOEXCEPT {
         return "Cannot format code: [" + itw_to_string(code) + "]" +
             " into message, narrow error: [" + e.what() + "]";
     }
+}
+
+std::wstring load_resource_string(UINT id) {
+    std::wstring wstr;
+    wstr.resize(ITW_MAX_RC_LEN);
+    int loaded = ::LoadStringW(
+        ITW_HANDLE_INSTANCE,
+        id,
+        itw_addressof(wstr.front()),
+        static_cast<int>(wstr.length()));
+    if (loaded > 0) {
+        wstr.resize(loaded);
+        return wstr;
+    } else {
+        auto errres = std::string("ERROR_LOAD_RESOURCE_") + itw_to_string(id);
+        return widen(errres);
+    }
+}
+
+std::string load_resource_narrow(UINT id) {
+    auto wide = load_resource_string(id);
+    return narrow(wide);
 }
 
 std::string process_dir() {
@@ -352,7 +389,7 @@ int start_process(const std::string& executable, const std::vector<std::string>&
     }
 
     // log cmdline
-    auto cmd_string_log = "Starting NetX, command: [" + cmd_string + "]\r\n";
+    auto cmd_string_log = "Starting Netx, command: [" + cmd_string + "]\r\n";
     auto err_logcmd = ::WriteFile(
         out_handle,
         cmd_string_log.c_str(),
@@ -401,9 +438,9 @@ HRESULT error_dialog_cb(HWND, UINT uNotification, WPARAM, LPARAM lParam, LONG_PT
     int64_t intres = reinterpret_cast<int64_t> (res);
     bool success = intres > 32;
     if (!success) {
-        static std::wstring wtitle = widen("IcedTea-Web");
-        static std::wstring werror = widen("Error starting default web-browser");
-        static std::wstring wempty = widen(std::string());
+        std::wstring wtitle = load_resource_string(IDS_ERROR_DIALOG_TITLE);
+        std::wstring werror = load_resource_string(IDS_BROWSER_ERROR_TEXT);
+        std::wstring wempty = widen(std::string());
         ::TaskDialog(
                 nullptr,
                 ::GetModuleHandleW(nullptr),
@@ -418,13 +455,16 @@ HRESULT error_dialog_cb(HWND, UINT uNotification, WPARAM, LPARAM lParam, LONG_PT
 }
 
 void show_error_dialog(const std::string& error) {
-    static std::wstring wtitle = widen("IcedTea-Web");
-    static std::string url = "http://icedtea.classpath.org/wiki/IcedTea-Web";
+    std::wstring wtitle = load_resource_string(IDS_ERROR_DIALOG_TITLE);
+    std::string url = load_resource_narrow(IDS_ERROR_HELP_URL);
     auto link = std::string("<a href=\"") + url + "\">" + url + "</a>";
     auto wlink = widen(link);
-    static std::wstring wmain = widen("IcedTea-Web was unable to start Java VM.\n\nPlease follow the link below for troubleshooting information.");
-    static std::wstring wexpanded = widen("Hide detailed error message");
-    static std::wstring wcollapsed = widen("Show detailed error message");
+    auto header = load_resource_narrow(IDS_ERROR_DIALOG_HEADER);
+    auto subheader = load_resource_narrow(IDS_ERROR_DIALOG_SUBHEADER);
+    auto fullheader = header + "\n\n" + subheader;
+    std::wstring wmain = widen(fullheader);
+    std::wstring wexpanded = widen("Hide detailed error message");
+    std::wstring wcollapsed = widen("Show detailed error message");
     std::wstring werror = widen(error);
 
     TASKDIALOGCONFIG cf;
@@ -432,7 +472,7 @@ void show_error_dialog(const std::string& error) {
     cf.cbSize = sizeof(TASKDIALOGCONFIG);
     cf.hwndParent = nullptr;
     cf.hInstance = ::GetModuleHandleW(nullptr);
-    cf.dwFlags = TDF_ENABLE_HYPERLINKS | TDF_EXPAND_FOOTER_AREA | TDF_ALLOW_DIALOG_CANCELLATION /* | TDF_SIZE_TO_CONTENT */ ; 
+    cf.dwFlags = TDF_ENABLE_HYPERLINKS | TDF_EXPAND_FOOTER_AREA | TDF_ALLOW_DIALOG_CANCELLATION | TDF_SIZE_TO_CONTENT; 
     cf.dwCommonButtons = TDCBF_CLOSE_BUTTON;
     cf.pszWindowTitle = wtitle.c_str();
     cf.pszMainIcon = MAKEINTRESOURCEW(111);
@@ -461,22 +501,72 @@ void show_error_dialog(const std::string& error) {
             nullptr);
 }
 
+void purge_work_dir() ITW_NOEXCEPT {
+    // find out dirs
+    auto uddir = itw::userdata_dir();
+    auto vendor_name = load_resource_narrow(IDS_VENDOR_DIRNAME);
+    auto vendor_dir = uddir + vendor_name;
+    auto app_name = load_resource_narrow(IDS_APP_DIRNAME);
+    auto app_dir = vendor_dir + "/" + app_name;
+    auto ws_dir = app_dir + "/webstart";
+
+    // prepare double-terminated path
+    auto ws_dir_wide = widen(ws_dir);
+    auto ws_dir_terminated = std::vector<wchar_t>();
+    std::copy(ws_dir_wide.begin(), ws_dir_wide.end(), std::back_inserter(ws_dir_terminated));
+    ws_dir_terminated.push_back('\0');
+    ws_dir_terminated.push_back('\0');
+
+    // delete webstart dir recursively
+    SHFILEOPSTRUCT shop;
+    std::memset(itw_addressof(shop), '\0', sizeof(shop));
+    shop.wFunc = FO_DELETE;
+    shop.pFrom = ws_dir_terminated.data();
+    shop.fFlags = FOF_NO_UI;
+    auto err_shop = ::SHFileOperation(itw_addressof(shop));
+    (void) err_shop;
+
+    // try to delete other dirs only if there are
+    // no contents from other installed components inside
+    auto app_dir_wide = widen(app_dir);
+    auto err_app = ::RemoveDirectoryW(app_dir_wide.c_str());
+    (void) err_app;
+    auto vendor_dir_wide = widen(vendor_dir);
+    auto err_vendor = ::RemoveDirectoryW(vendor_dir_wide.c_str());
+    (void) err_vendor;
+}
+
+std::string prepare_webstart_dir() {
+    auto uddir = itw::userdata_dir();
+    auto vendor_name = load_resource_narrow(IDS_VENDOR_DIRNAME);
+    auto vendor_dir = uddir + vendor_name;
+    itw::create_dir(vendor_dir);
+    auto app_name = load_resource_narrow(IDS_APP_DIRNAME);
+    auto app_dir = vendor_dir + "/" + app_name;
+    itw::create_dir(app_dir);
+    auto ws_dir = app_dir + "/webstart/";
+    itw::create_dir(ws_dir);
+    return ws_dir;
+}
+
 } // namespace
 
-int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR lpCmdLine, int) {
-    static std::string log_dir_name = "IcedTeaWeb/";
-    static std::string log_file_name = "javaws_last_log.txt";
-    static std::string jvm_flags = "-XX:+TieredCompilation -XX:TieredStopAtLevel=1 -XX:+UseSerialGC -XX:MinHeapFreeRatio=20 -XX:MaxHeapFreeRatio=40";
+int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR lpCmdLine, int) {
+    ITW_HANDLE_INSTANCE = hInstance;
+    std::string jvm_flags = itw::load_resource_narrow(IDS_JVM_OPTIONS);
     try {
         auto cline = std::string(lpCmdLine);
         if (cline.empty()) {
-            throw itw::itw_exception("No arguments specified. Please specify a path to JNLP file or a 'jnlp://' URL.");
+            std::string msg = itw::load_resource_narrow(IDS_NO_ARGS_ERROR_MESSAGE);
+            throw itw::itw_exception(msg);
+        } else if ("-d" == cline) {
+            itw::purge_work_dir();
+            return 0;
         }
         auto localdir = itw::process_dir();
-        auto uddir = itw::userdata_dir();
-        auto logdir = uddir + log_dir_name;
+        auto wsdir = itw::prepare_webstart_dir();
         auto jdkdir = localdir + "../";
-        auto java_exe = jdkdir + "bin/java.exe";
+        auto help_url = itw::load_resource_narrow(IDS_ERROR_HELP_URL);
         std::vector<std::string> args;
         args.push_back(jvm_flags);
         //args.push_back("-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=5005");
@@ -484,15 +574,14 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR lpCmdLine, int) {
         args.push_back("-Xbootclasspath/a:\"" + localdir + "javaws.jar\"");
         args.push_back("-classpath");
         args.push_back("\"" + jdkdir + "jre/lib/rt.jar\"");
-        args.push_back("-Ditw.userdata=\"" + logdir + "\"");
+        args.push_back("-Ditw.userdata=\"" + wsdir + "\"");
         args.push_back("-Dicedtea-web.bin.name=javaws.exe");
         args.push_back("-Dicedtea-web.bin.location=\"" + localdir + "javaws.exe\"");
         args.push_back("net.sourceforge.jnlp.runtime.Boot");
         args.push_back("-Xnofork");
+        args.push_back("-helpurl=\"" + help_url + "\"");
         args.push_back(cline);
-        itw::create_dir(logdir);
-        auto logfile = logdir + log_file_name;
-        itw::start_process(java_exe, args, logfile);
+        itw::start_process(jdkdir + "bin/java.exe", args, wsdir + "javaws_last_log.txt");
         return 0;
     } catch (const std::exception& e) {
         itw::show_error_dialog(e.what());
