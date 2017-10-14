@@ -145,6 +145,7 @@ public:
 // implementation
 
 std::wstring widen(const std::string& st) {
+    if (st.empty()) return std::wstring();
     int size_needed = ::MultiByteToWideChar(
             CP_UTF8,
             0,
@@ -173,6 +174,7 @@ std::wstring widen(const std::string& st) {
 }
 
 std::string narrow(const wchar_t* wstring, size_t length) {
+    if (0 == length) return std::string();
     int size_needed = ::WideCharToMultiByte(
             CP_UTF8,
             0,
@@ -390,11 +392,12 @@ int start_process(const std::string& executable, const std::vector<std::string>&
 
     // log cmdline
     auto cmd_string_log = "Starting Netx, command: [" + cmd_string + "]\r\n";
+    DWORD bytes_written = 0;
     auto err_logcmd = ::WriteFile(
         out_handle,
         cmd_string_log.c_str(),
         static_cast<DWORD>(cmd_string_log.length()),
-        nullptr,
+        itw_addressof(bytes_written),
         nullptr);
     if (0 == err_logcmd) {
         throw itw_exception(std::string("Error logging cmdline,") + 
