@@ -29,7 +29,8 @@ set ( ${PROJECT_NAME}_ERROR_HELP_URL_LABEL "https://github.com/ojdkbuild/ojdkbui
 set ( ${PROJECT_NAME}_ERROR_DIALOG_HEADER_LABEL "${openjdk_VENDOR_SHORT} WebStart was unable to start Java VM." CACHE STRING "Error dialog header" )
 set ( ${PROJECT_NAME}_ERROR_DIALOG_SUBHEADER_LABEL "Please follow the link below for troubleshooting information." CACHE STRING "Error dialog subheader" )
 set ( ${PROJECT_NAME}_JVM_OPTIONS "-XX:+TieredCompilation -XX:TieredStopAtLevel=1 -XX:+UseSerialGC -XX:MinHeapFreeRatio=20 -XX:MaxHeapFreeRatio=40" CACHE STRING "JVM options" )
-set ( ${PROJECT_NAME}_NO_ARGS_ERROR_MESSAGE_LABEL "No arguments specified. Please specify a path (or URL) to JNLP file or a 'jnlp://' URL." CACHE STRING "Error message on no arguments given" )
+set ( ${PROJECT_NAME}_NO_ARGS_ERROR_HEADER "This application is not intended to be used directly. Please run JNLP from a web-browser or from a file explorer." CACHE STRING "Error header on no arguments given" )
+set ( ${PROJECT_NAME}_NO_ARGS_ERROR_LABEL "No arguments specified. Please specify a path (or URL) to JNLP file or a 'jnlp://' URL." CACHE STRING "Error message on no arguments given" )
 
 configure_file ( ${CMAKE_CURRENT_LIST_DIR}/resources/launcher.rc
         ${CMAKE_CURRENT_BINARY_DIR}/launcher.rc )

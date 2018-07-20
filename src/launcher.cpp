@@ -427,7 +427,7 @@ int start_process(const std::string& executable, const std::vector<std::string>&
     return res;
 }
 
-HRESULT error_dialog_cb(HWND, UINT uNotification, WPARAM, LPARAM lParam, LONG_PTR) {
+HRESULT CALLBACK error_dialog_cb(HWND, UINT uNotification, WPARAM, LPARAM lParam, LONG_PTR) {
     if (TDN_HYPERLINK_CLICKED != uNotification) {
         return S_OK;
     }
@@ -462,7 +462,13 @@ void show_error_dialog(const std::string& error) {
     std::string url = load_resource_narrow(IDS_ERROR_HELP_URL);
     auto link = std::string("<a href=\"") + url + "\">" + url + "</a>";
     auto wlink = widen(link);
-    auto header = load_resource_narrow(IDS_ERROR_DIALOG_HEADER);
+    auto noargs_msg = load_resource_narrow(IDS_NO_ARGS_ERROR_LABEL);
+    auto header = std::string();
+    if (noargs_msg == error) {
+        header = load_resource_narrow(IDS_NO_ARGS_ERROR_HEADER);
+    } else {
+        header = load_resource_narrow(IDS_ERROR_DIALOG_HEADER);
+    }
     auto subheader = load_resource_narrow(IDS_ERROR_DIALOG_SUBHEADER);
     auto fullheader = header + "\n\n" + subheader;
     std::wstring wmain = widen(fullheader);
@@ -560,7 +566,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR lpCmdLine, int) {
     try {
         auto cline = std::string(lpCmdLine);
         if (cline.empty()) {
-            std::string msg = itw::load_resource_narrow(IDS_NO_ARGS_ERROR_MESSAGE);
+            std::string msg = itw::load_resource_narrow(IDS_NO_ARGS_ERROR_LABEL);
             throw itw::itw_exception(msg);
         } else if ("-d" == cline) {
             itw::purge_work_dir();
