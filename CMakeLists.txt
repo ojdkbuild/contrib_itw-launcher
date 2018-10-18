@@ -31,6 +31,7 @@ set ( ${PROJECT_NAME}_ERROR_DIALOG_SUBHEADER_LABEL "Please follow the link below
 set ( ${PROJECT_NAME}_JVM_OPTIONS "-XX:+TieredCompilation -XX:TieredStopAtLevel=1 -XX:+UseSerialGC -XX:MinHeapFreeRatio=20 -XX:MaxHeapFreeRatio=40" CACHE STRING "JVM options" )
 set ( ${PROJECT_NAME}_NO_ARGS_ERROR_HEADER "This application is not intended to be used directly. Please run JNLP from a web-browser or from a file explorer." CACHE STRING "Error header on no arguments given" )
 set ( ${PROJECT_NAME}_NO_ARGS_ERROR_LABEL "No arguments specified. Please specify a path (or URL) to JNLP file or a 'jnlp://' URL." CACHE STRING "Error message on no arguments given" )
+set ( ${PROJECT_NAME}_ENABLE_JPMS OFF CACHE BOOL "Enable JPMS-related arguments to run launcher with jdk9+" )
 
 configure_file ( ${CMAKE_CURRENT_LIST_DIR}/resources/launcher.rc
         ${CMAKE_CURRENT_BINARY_DIR}/launcher.rc )
@@ -43,6 +44,10 @@ target_include_directories ( javaws BEFORE PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}/src )
 
 target_compile_options ( javaws PRIVATE /W4 /WX )
+
+if ( ${PROJECT_NAME}_ENABLE_JPMS )
+    target_compile_definitions ( javaws PRIVATE -DITW_ENABLE_JPMS )
+endif ( )
 
 target_link_libraries ( javaws
         shell32
