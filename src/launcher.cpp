@@ -332,6 +332,7 @@ int start_process(const std::string& executable, const std::vector<std::string>&
     // open stdout file
     auto wout = widen(out);
     SECURITY_ATTRIBUTES sa;
+    std::memset(itw_addressof(sa), '\0', sizeof(SECURITY_ATTRIBUTES));
     sa.nLength = sizeof(sa);
     sa.lpSecurityDescriptor = nullptr;
     sa.bInheritHandle = TRUE; 
@@ -394,8 +395,8 @@ int start_process(const std::string& executable, const std::vector<std::string>&
 
     // prepare process
     STARTUPINFOEXW si;
-    std::memset(itw_addressof(si), 0, sizeof(STARTUPINFOEXW));
-    std::memset(itw_addressof(si.StartupInfo), 0, sizeof(STARTUPINFOW));
+    std::memset(itw_addressof(si), '\0', sizeof(STARTUPINFOEXW));
+    std::memset(itw_addressof(si.StartupInfo), '\0', sizeof(STARTUPINFOW));
     si.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
     si.StartupInfo.hStdInput = nullptr;
     si.StartupInfo.hStdError = out_handle;
@@ -404,7 +405,7 @@ int start_process(const std::string& executable, const std::vector<std::string>&
     si.lpAttributeList = talist;
 
     PROCESS_INFORMATION pi;
-    memset(itw_addressof(pi), 0, sizeof(PROCESS_INFORMATION));
+    std::memset(itw_addressof(pi), '\0', sizeof(PROCESS_INFORMATION));
     std::string cmd_string = "\"" + executable + "\"";
     for (size_t i = 0; i < args.size(); i++) {
         cmd_string += " ";
@@ -548,12 +549,12 @@ void purge_work_dir() ITW_NOEXCEPT {
     ws_dir_terminated.push_back('\0');
 
     // delete webstart dir recursively
-    SHFILEOPSTRUCT shop;
-    std::memset(itw_addressof(shop), '\0', sizeof(shop));
+    SHFILEOPSTRUCTW shop;
+    std::memset(itw_addressof(shop), '\0', sizeof(SHFILEOPSTRUCTW));
     shop.wFunc = FO_DELETE;
     shop.pFrom = ws_dir_terminated.data();
     shop.fFlags = FOF_NO_UI;
-    auto err_shop = ::SHFileOperation(itw_addressof(shop));
+    auto err_shop = ::SHFileOperationW(itw_addressof(shop));
     (void) err_shop;
 
     // try to delete other dirs only if there are
@@ -567,15 +568,15 @@ void purge_work_dir() ITW_NOEXCEPT {
 }
 
 std::string prepare_webstart_dir() {
-    auto uddir = itw::userdata_dir();
+    auto uddir = userdata_dir();
     auto vendor_name = load_resource_narrow(IDS_VENDOR_DIRNAME);
     auto vendor_dir = uddir + vendor_name;
-    itw::create_dir(vendor_dir);
+    create_dir(vendor_dir);
     auto app_name = load_resource_narrow(IDS_APP_DIRNAME);
     auto app_dir = vendor_dir + "/" + app_name;
-    itw::create_dir(app_dir);
+    create_dir(app_dir);
     auto ws_dir = app_dir + "/webstart/";
-    itw::create_dir(ws_dir);
+    create_dir(ws_dir);
     return ws_dir;
 }
 
@@ -585,6 +586,7 @@ std::vector<std::string> load_options(const std::string& optfile, const std::str
 
     // check size
     WIN32_FILE_ATTRIBUTE_DATA fad;
+    std::memset(itw_addressof(fad), '\0', sizeof(WIN32_FILE_ATTRIBUTE_DATA));
     auto atcode = ::GetFileAttributesExW(woptfile.c_str(), GetFileExInfoStandard, itw_addressof(fad));
     if (0 == atcode) {
         throw itw_exception(std::string("Error opening options file,") +
@@ -601,13 +603,13 @@ std::vector<std::string> load_options(const std::string& optfile, const std::str
     }
 
     // read file
-    std::vector<std::string> res;
+    auto res = std::vector<std::string>();
     auto stream = std::ifstream(woptfile);
     if (!stream.is_open()) {
         throw itw_exception(std::string("Error opening options file,") +
                 " path: [" + optfile + "]");
     }
-    std::string line;
+    auto line = std::string();
     while (std::getline(stream, line)) {
         auto trimmed = str_trim(line);
         if (trimmed.length() > 0 && '#' != trimmed.at(0)) {
@@ -624,6 +626,67 @@ std::vector<std::string> load_options(const std::string& optfile, const std::str
     return res;
 }
 
+void migrate_webstart_dir() ITW_NOEXCEPT {
+    // check dest dir doesn't exist
+    auto uddir = userdata_dir();
+    auto vendor_name = load_resource_narrow(IDS_VENDOR_DIRNAME);
+    auto vendor_dir = uddir + vendor_name + "/";
+    auto app_name = load_resource_narrow(IDS_APP_DIRNAME);
+    auto app_dir = vendor_dir + app_name + "/";
+    auto dest_dir = app_dir + "webstart/";
+    auto wdest_dir = widen(dest_dir);
+    auto dest_attrs = ::GetFileAttributesW(wdest_dir.c_str());
+    if (INVALID_FILE_ATTRIBUTES != dest_attrs) {
+        return;
+    }
+
+    // list previous versions and find the most recent version
+    auto dirs_list = std::vector<std::string>();
+    auto appdir_prefix = load_resource_narrow(IDS_MIGRATE_APPDIR_PREFIX);
+    auto search_req = vendor_dir + appdir_prefix + "*";
+    auto wsearch_req = widen(search_req);
+    WIN32_FIND_DATAW ffd;
+    std::memset(itw_addressof(ffd), '\0', sizeof(WIN32_FIND_DATAW));
+    auto ha = ::FindFirstFileW(wsearch_req.c_str(), itw_addressof(ffd));
+    if (INVALID_HANDLE_VALUE != ha) {
+        auto deferred = defer(make_itw_lambda(::FindClose, ha));
+        do {
+            auto wname = std::wstring(ffd.cFileName);
+            auto name = narrow(wname);
+            if ((ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
+                auto adir = vendor_dir + name + "/";
+                auto wa_dir = adir + "webstart/";
+                auto wwa_dir = widen(wa_dir);
+                auto wa_attrs = ::GetFileAttributesW(wwa_dir.c_str());
+                if ((INVALID_FILE_ATTRIBUTES != wa_attrs) && (wa_attrs & FILE_ATTRIBUTE_DIRECTORY)) {
+                    dirs_list.push_back(adir);
+                }
+            }
+        } while(0 != ::FindNextFile(ha, itw_addressof(ffd)));
+    }
+    if (0 == dirs_list.size()) {
+        return;
+    }
+
+    // find the most recent version
+    std::sort(dirs_list.begin(), dirs_list.end());
+    auto old_app_dir = dirs_list.back();
+    auto src_dir = old_app_dir + "webstart/";
+
+    // migrate the most recent version
+    create_dir(vendor_dir);
+    create_dir(app_dir);
+    auto wsrc_dir = widen(src_dir);
+    auto err_move = ::MoveFile(wsrc_dir.c_str(), wdest_dir.c_str());
+
+    // cleanup
+    if (0 != err_move) {
+        auto wold_app_dir = widen(old_app_dir);
+        auto err_old_app = ::RemoveDirectoryW(wold_app_dir.c_str());
+        (void) err_old_app;
+    }
+}
+
 } // namespace
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR lpCmdLine, int) {
@@ -636,13 +699,16 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR lpCmdLine, int) {
         } else if ("-d" == cline) {
             itw::purge_work_dir();
             return 0;
+        } else if ("-m" == cline) {
+            itw::migrate_webstart_dir();
+            return 0;
         }
         auto localdir = itw::process_dir();
         auto wsdir = itw::prepare_webstart_dir();
         auto jdkdir = localdir + "../";
         std::vector<std::string> args;
         auto opts = itw::load_options(localdir + "javaws_options.txt", localdir, wsdir, jdkdir);
-        args.insert(args.end(), opts.begin(), opts.end());
+        std::copy(opts.begin(), opts.end(), std::back_inserter(args));
         args.push_back(cline);
         itw::start_process(jdkdir + "bin/java.exe", args, wsdir + "javaws_last_log.txt");
         return 0;

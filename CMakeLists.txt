@@ -30,6 +30,7 @@ set ( ${PROJECT_NAME}_ERROR_DIALOG_HEADER_LABEL "${openjdk_VENDOR_SHORT} WebStar
 set ( ${PROJECT_NAME}_ERROR_DIALOG_SUBHEADER_LABEL "Please follow the link below for troubleshooting information." CACHE STRING "Error dialog subheader" )
 set ( ${PROJECT_NAME}_NO_ARGS_ERROR_HEADER "This application is not intended to be used directly. Please run JNLP from a web-browser or from a file explorer." CACHE STRING "Error header on no arguments given" )
 set ( ${PROJECT_NAME}_NO_ARGS_ERROR_LABEL "No arguments specified. Please specify a path (or URL) to JNLP file or a 'jnlp://' URL." CACHE STRING "Error message on no arguments given" )
+set ( ${PROJECT_NAME}_MIGRATE_APPDIR_PREFIX "java-1.8.0-openjdk-1.8.0." CACHE STRING "Prefix of the application directory that can be used as a source to migrate old data" )
 
 configure_file ( ${CMAKE_CURRENT_LIST_DIR}/resources/launcher.rc
         ${CMAKE_CURRENT_BINARY_DIR}/launcher.rc )
