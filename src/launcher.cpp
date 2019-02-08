@@ -17,10 +17,12 @@
 #include "launcher.hpp"
 
 #include <stdint.h>
+#include <cctype>
 #include <cstdlib>
 #include <cstring>
 #include <algorithm>
 #include <exception>
+#include <fstream>
 #include <iterator>
 #include <sstream>
 #include <string>
@@ -141,6 +143,25 @@ public:
         return message.c_str();
     }
 };
+
+// string utils
+
+std::string& str_replace(std::string& str, const std::string& snippet, const std::string& replacement) {
+    if (snippet.empty()) {
+        return str;
+    }
+    auto pos = std::string::npos;
+    while (std::string::npos != (pos = str.find(snippet))) {
+        str.replace(pos, snippet.length(), replacement);
+    }
+    return str;
+}
+
+std::string str_trim(const std::string& s) {
+    auto wsfront = std::find_if_not(s.begin(), s.end(), std::isspace);
+    return std::string(wsfront,
+        std::find_if_not(s.rbegin(), std::string::const_reverse_iterator(wsfront), std::isspace).base());
+}
 
 // implementation
 
@@ -558,11 +579,55 @@ std::string prepare_webstart_dir() {
     return ws_dir;
 }
 
+std::vector<std::string> load_options(const std::string& optfile, const std::string& localdir,
+        const std::string& wsdir, const std::string& jdkdir) {
+    auto woptfile = widen(optfile);
+
+    // check size
+    WIN32_FILE_ATTRIBUTE_DATA fad;
+    auto atcode = ::GetFileAttributesExW(woptfile.c_str(), GetFileExInfoStandard, itw_addressof(fad));
+    if (0 == atcode) {
+        throw itw_exception(std::string("Error opening options file,") +
+            " path: [" + optfile + "]" +
+            " error: [" + errcode_to_string(::GetLastError()) + "]");
+    }
+    LARGE_INTEGER size;
+    size.HighPart = fad.nFileSizeHigh;
+    size.LowPart = fad.nFileSizeLow;
+    if(size.QuadPart > (1<<20)) {
+        throw itw_exception(std::string("Options file max size exceeded,") +
+            " path: [" + optfile + "]" +
+            " size: [" + itw_to_string(size.QuadPart) + "]");
+    }
+
+    // read file
+    std::vector<std::string> res;
+    auto stream = std::ifstream(woptfile);
+    if (!stream.is_open()) {
+        throw itw_exception(std::string("Error opening options file,") +
+                " path: [" + optfile + "]");
+    }
+    std::string line;
+    while (std::getline(stream, line)) {
+        auto trimmed = str_trim(line);
+        if (trimmed.length() > 0 && '#' != trimmed.at(0)) {
+            str_replace(trimmed, "{{wsdir}}", wsdir);
+            str_replace(trimmed, "{{localdir}}", localdir);
+            str_replace(trimmed, "{{jdkdir}}", jdkdir);
+            res.push_back(trimmed);
+        }
+    }
+    if (stream.bad()) {
+        throw itw_exception(std::string("Error reading options file,") +
+                " path: [" + optfile + "]");
+    }
+    return res;
+}
+
 } // namespace
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR lpCmdLine, int) {
     ITW_HANDLE_INSTANCE = hInstance;
-    std::string jvm_flags = itw::load_resource_narrow(IDS_JVM_OPTIONS);
     try {
         auto cline = std::string(lpCmdLine);
         if (cline.empty()) {
@@ -575,60 +640,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR lpCmdLine, int) {
         auto localdir = itw::process_dir();
         auto wsdir = itw::prepare_webstart_dir();
         auto jdkdir = localdir + "../";
-        auto help_url = itw::load_resource_narrow(IDS_ERROR_HELP_URL);
         std::vector<std::string> args;
-        args.push_back(jvm_flags);
-        //args.push_back("-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=5005");
-        args.push_back("-splash:\"" + localdir + "javaws_splash.png\"");
-        args.push_back("-Xbootclasspath/a:\"" + localdir + "javaws.jar\"");
-#ifdef ITW_ENABLE_JPMS
-        args.push_back("--patch-module");
-        args.push_back("java.desktop=\"" + localdir + "javaws.jar\"");
-        args.push_back("--add-reads");
-        args.push_back("java.base=ALL-UNNAMED,java.desktop");
-        args.push_back("--add-reads");
-        args.push_back("java.desktop=ALL-UNNAMED,java.naming");
-        args.push_back("--add-reads");
-        args.push_back("java.naming=ALL-UNNAMED,java.desktop");
-        args.push_back("--add-exports");
-        args.push_back("java.desktop/sun.awt=ALL-UNNAMED,java.desktop");
-        args.push_back("--add-exports");
-        args.push_back("java.desktop/javax.jnlp=ALL-UNNAMED,java.desktop");
-        args.push_back("--add-exports");
-        args.push_back("java.base/sun.security.provider=ALL-UNNAMED,java.desktop");
-        args.push_back("--add-exports");
-        args.push_back("java.base/sun.security.util=ALL-UNNAMED,java.desktop");
-        args.push_back("--add-exports");
-        args.push_back("java.base/sun.security.x509=ALL-UNNAMED,java.desktop");
-        args.push_back("--add-exports");
-        args.push_back("java.base/jdk.internal.util.jar=ALL-UNNAMED,java.desktop");
-        args.push_back("--add-exports");
-        args.push_back("java.base/sun.security.validator=ALL-UNNAMED,java.desktop");
-        args.push_back("--add-exports");
-        args.push_back("java.base/com.sun.net.ssl.internal.ssl=ALL-UNNAMED,java.desktop");
-        args.push_back("--add-exports");
-        args.push_back("java.base/sun.net.www.protocol.jar=ALL-UNNAMED,java.desktop");
-        args.push_back("--add-exports");
-        args.push_back("java.desktop/sun.awt.windows=ALL-UNNAMED,java.desktop");
-        args.push_back("--add-exports");
-        args.push_back("java.naming/com.sun.jndi.toolkit.url=ALL-UNNAMED,java.desktop");
-        args.push_back("--add-exports");
-        args.push_back("java.desktop/sun.applet=ALL-UNNAMED,java.desktop");
-        args.push_back("--add-exports");
-        args.push_back("java.base/sun.security.action=ALL-UNNAMED,java.desktop");
-        args.push_back("--add-exports");
-        args.push_back("java.base/sun.net.www.protocol.http=ALL-UNNAMED,java.desktop");
-        args.push_back("--add-exports");
-        args.push_back("java.desktop/sun.applet=ALL-UNNAMED,jdk.jsobject");
-#endif // ITW_ENABLE_JPMS
-        args.push_back("-classpath");
-        args.push_back("\"" + jdkdir + "jre/lib/rt.jar\"");
-        args.push_back("-Ditw.userdata=\"" + wsdir + "\"");
-        args.push_back("-Dicedtea-web.bin.name=javaws.exe");
-        args.push_back("-Dicedtea-web.bin.location=\"" + localdir + "javaws.exe\"");
-        args.push_back("net.sourceforge.jnlp.runtime.Boot");
-        args.push_back("-Xnofork");
-        args.push_back("-helpurl=\"" + help_url + "\"");
+        auto opts = itw::load_options(localdir + "javaws_options.txt", localdir, wsdir, jdkdir);
+        args.insert(args.end(), opts.begin(), opts.end());
         args.push_back(cline);
         itw::start_process(jdkdir + "bin/java.exe", args, wsdir + "javaws_last_log.txt");
         return 0;
