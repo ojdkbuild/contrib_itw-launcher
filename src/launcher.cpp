@@ -659,7 +659,7 @@ void migrate_webstart_dir() ITW_NOEXCEPT {
                 auto wwa_dir = widen(wa_dir);
                 auto wa_attrs = ::GetFileAttributesW(wwa_dir.c_str());
                 if ((INVALID_FILE_ATTRIBUTES != wa_attrs) && (wa_attrs & FILE_ATTRIBUTE_DIRECTORY)) {
-                    dirs_list.push_back(adir);
+                    dirs_list.push_back(name);
                 }
             }
         } while(0 != ::FindNextFile(ha, itw_addressof(ffd)));
@@ -670,14 +670,15 @@ void migrate_webstart_dir() ITW_NOEXCEPT {
 
     // find the most recent version
     std::sort(dirs_list.begin(), dirs_list.end());
-    auto old_app_dir = dirs_list.back();
+    auto old_app_name = dirs_list.back();
+    auto old_app_dir = vendor_dir + old_app_name + "/";
     auto src_dir = old_app_dir + "webstart/";
 
     // migrate the most recent version
     create_dir(vendor_dir);
     create_dir(app_dir);
     auto wsrc_dir = widen(src_dir);
-    auto err_move = ::MoveFile(wsrc_dir.c_str(), wdest_dir.c_str());
+    auto err_move = ::MoveFileW(wsrc_dir.c_str(), wdest_dir.c_str());
 
     // cleanup
     if (0 != err_move) {
@@ -685,6 +686,35 @@ void migrate_webstart_dir() ITW_NOEXCEPT {
         auto err_old_app = ::RemoveDirectoryW(wold_app_dir.c_str());
         (void) err_old_app;
     }
+
+    // adjust recently_used descriptor
+    auto ru_dir = dest_dir + ".cache/icedtea-web/cache/";
+    auto ru_path = ru_dir + "recently_used";
+    auto ru_bak_path = ru_path + "." + old_app_name;
+    auto wru_path = widen(ru_path);
+    auto wru_bak_path = widen(ru_bak_path);
+    auto err_bak = ::MoveFileW(wru_path.c_str(), wru_bak_path.c_str());
+    if (0 == err_bak) {
+        return;
+    }
+    {
+        auto is = std::ifstream(wru_bak_path);
+        if (!is.is_open()) {
+            return;
+        }
+        auto os = std::ofstream(wru_path);
+        if (!os.is_open()) {
+            return;
+        }
+        auto line = std::string();
+        while (std::getline(is, line)) {
+            str_replace(line, old_app_name, app_name);
+            os << line;
+            os << "\n";
+        }
+    }
+    auto err_del = ::DeleteFileW(wru_bak_path.c_str());
+    (void) err_del;
 }
 
 } // namespace
