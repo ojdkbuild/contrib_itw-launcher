@@ -32,21 +32,32 @@ set ( ${PROJECT_NAME}_NO_ARGS_ERROR_HEADER "This application is not intended to 
 set ( ${PROJECT_NAME}_NO_ARGS_ERROR_LABEL "No arguments specified. Please specify a path (or URL) to JNLP file or a 'jnlp://' URL." CACHE STRING "Error message on no arguments given" )
 set ( ${PROJECT_NAME}_MIGRATE_APPDIR_PREFIX "java-1.8.0-openjdk-1.8.0." CACHE STRING "Prefix of the application directory that can be used as a source to migrate old data" )
 
+# resources
 configure_file ( ${CMAKE_CURRENT_LIST_DIR}/resources/launcher.rc
         ${CMAKE_CURRENT_BINARY_DIR}/launcher.rc )
 configure_file ( ${CMAKE_CURRENT_LIST_DIR}/resources/javaws_options.txt
         ${CMAKE_CURRENT_BINARY_DIR}/javaws_options.txt )
 
+# dependencies
+add_subdirectory ( ${CMAKE_CURRENT_LIST_DIR}/../ojdkbuild-utils ojdkbuild_utils )
+set_target_properties ( ojdkbuild_utils PROPERTIES FOLDER "deps" )
+
+set ( ${PROJECT_NAME}_DEPS ojdkbuild_utils )
+ojdkbuild_pkg_check_modules ( ${PROJECT_NAME}_DEPS_PC REQUIRED ${PROJECT_NAME}_DEPS )
+
+# target
 add_executable ( javaws WIN32
         src/launcher.cpp
         ${CMAKE_CURRENT_BINARY_DIR}/launcher.rc )
 
 target_include_directories ( javaws BEFORE PRIVATE
-        ${CMAKE_CURRENT_LIST_DIR}/src )
+        ${CMAKE_CURRENT_LIST_DIR}/src
+        ${${PROJECT_NAME}_DEPS_PC_INCLUDE_DIRS} )
 
 target_compile_options ( javaws PRIVATE /W4 /WX )
 
 target_link_libraries ( javaws
+        ojdkbuild_utils
         shell32
         ole32
         comctl32

@@ -31,13 +31,15 @@
 #define UNICODE
 #define _UNICODE
 #ifndef NOMINMAX
-#  define NOMINMAX
+#define NOMINMAX
 #endif // NOMINMAX
 #include <windows.h>
 #include <commctrl.h>
 #include <shlobj.h>
 #include <shellapi.h>
 #include <knownfolders.h>
+
+#include "ojdkbuild/utils.hpp"
 
 // http://svn.wxwidgets.org/viewvc/wx/wxWidgets/trunk/src/msw/msgdlg.cpp?r1=70409&r2=70408&pathrev=70409
 #ifndef TDF_SIZE_TO_CONTENT
@@ -57,13 +59,6 @@ HINSTANCE ITW_HANDLE_INSTANCE = nullptr;
 namespace itw {
 
 // C++11 utils
-
-template<typename T>
-std::string itw_to_string(const T& obj) {
-    std::stringstream ss;
-    ss << obj;
-    return ss.str();
-}
 
 template<typename T>
 T* itw_addressof(T& t) {
@@ -144,25 +139,6 @@ public:
     }
 };
 
-// string utils
-
-std::string& str_replace(std::string& str, const std::string& snippet, const std::string& replacement) {
-    if (snippet.empty()) {
-        return str;
-    }
-    auto pos = std::string::npos;
-    while (std::string::npos != (pos = str.find(snippet))) {
-        str.replace(pos, snippet.length(), replacement);
-    }
-    return str;
-}
-
-std::string str_trim(const std::string& s) {
-    auto wsfront = std::find_if_not(s.begin(), s.end(), std::isspace);
-    return std::string(wsfront,
-        std::find_if_not(s.rbegin(), std::string::const_reverse_iterator(wsfront), std::isspace).base());
-}
-
 // implementation
 
 std::wstring widen(const std::string& st) {
@@ -207,7 +183,7 @@ std::string narrow(const wchar_t* wstring, size_t length) {
             nullptr);
     if (0 == size_needed) {
         throw itw_exception(std::string("Error on string narrow calculation,") +
-            " string length: [" + itw_to_string(length) + "], error code: [" + itw_to_string(::GetLastError()) + "]");
+            " string length: [" + ojb::to_string(length) + "], error code: [" + ojb::to_string(::GetLastError()) + "]");
     }
     auto vec = std::vector<char>();
     vec.resize(size_needed);
@@ -222,7 +198,7 @@ std::string narrow(const wchar_t* wstring, size_t length) {
             nullptr);
     if (bytes_copied != size_needed) {
         throw itw_exception(std::string("Error on string narrow execution,") +
-            " string length: [" + itw_to_string(vec.size()) + "], error code: [" + itw_to_string(::GetLastError()) + "]");
+            " string length: [" + ojb::to_string(vec.size()) + "], error code: [" + ojb::to_string(::GetLastError()) + "]");
     }
     return std::string(vec.begin(), vec.end());
 }
@@ -245,18 +221,18 @@ std::string errcode_to_string(unsigned long code) ITW_NOEXCEPT {
             0,
             nullptr);
     if (0 == size) {
-        return "Cannot format code: [" + itw_to_string(code) + "]" +
-            " into message, error code: [" + itw_to_string(::GetLastError()) + "]";
+        return "Cannot format code: [" + ojb::to_string(code) + "]" +
+            " into message, error code: [" + ojb::to_string(::GetLastError()) + "]";
     }
     auto deferred = defer(make_itw_lambda(::LocalFree, buf));
     if (size <= 2) {
-        return "code: [" + itw_to_string(code) + "], message: []";
+        return "code: [" + ojb::to_string(code) + "], message: []";
     }
     try {
         std::string msg = narrow(buf, size - 2);
-        return "code: [" + itw_to_string(code) + "], message: [" + msg + "]";
+        return "code: [" + ojb::to_string(code) + "], message: [" + msg + "]";
     } catch(const std::exception& e) {
-        return "Cannot format code: [" + itw_to_string(code) + "]" +
+        return "Cannot format code: [" + ojb::to_string(code) + "]" +
             " into message, narrow error: [" + e.what() + "]";
     }
 }
@@ -273,7 +249,7 @@ std::wstring load_resource_string(UINT id) {
         wstr.resize(loaded);
         return wstr;
     } else {
-        auto errres = std::string("ERROR_LOAD_RESOURCE_") + itw_to_string(id);
+        auto errres = std::string("ERROR_LOAD_RESOURCE_") + ojb::to_string(id);
         return widen(errres);
     }
 }
@@ -599,7 +575,7 @@ std::vector<std::string> load_options(const std::string& optfile, const std::str
     if(size.QuadPart > (1<<20)) {
         throw itw_exception(std::string("Options file max size exceeded,") +
             " path: [" + optfile + "]" +
-            " size: [" + itw_to_string(size.QuadPart) + "]");
+            " size: [" + ojb::to_string(size.QuadPart) + "]");
     }
 
     // read file
@@ -611,11 +587,11 @@ std::vector<std::string> load_options(const std::string& optfile, const std::str
     }
     auto line = std::string();
     while (std::getline(stream, line)) {
-        auto trimmed = str_trim(line);
+        auto trimmed = ojb::str_trim(line);
         if (trimmed.length() > 0 && '#' != trimmed.at(0)) {
-            str_replace(trimmed, "{{wsdir}}", wsdir);
-            str_replace(trimmed, "{{localdir}}", localdir);
-            str_replace(trimmed, "{{jdkdir}}", jdkdir);
+            ojb::str_replace(trimmed, "{{wsdir}}", wsdir);
+            ojb::str_replace(trimmed, "{{localdir}}", localdir);
+            ojb::str_replace(trimmed, "{{jdkdir}}", jdkdir);
             res.push_back(trimmed);
         }
     }
@@ -708,7 +684,7 @@ void migrate_webstart_dir() ITW_NOEXCEPT {
         }
         auto line = std::string();
         while (std::getline(is, line)) {
-            str_replace(line, old_app_name, app_name);
+            ojb::str_replace(line, old_app_name, app_name);
             os << line;
             os << "\n";
         }
