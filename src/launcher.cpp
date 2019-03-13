@@ -46,196 +46,10 @@
 #define TDF_SIZE_TO_CONTENT 0x1000000
 #endif
 
-#if defined(_MSC_VER) && _MSC_VER >= 1900
-#define ITW_NOEXCEPT noexcept
-#define ITW_NOEXCEPT_SUPPORTED
-#else // MSVC 2010, 2013
-#define ITW_NOEXCEPT
-#endif
-
 const size_t ITW_MAX_RC_LEN = 1 << 12;
 HINSTANCE ITW_HANDLE_INSTANCE = nullptr;
 
 namespace itw {
-
-// C++11 utils
-
-template<typename T>
-T* itw_addressof(T& t) {
-    return &t;
-}
-
-// golang's defer
-
-// http://stackoverflow.com/a/17356259/314015
-template<typename T>
-class defer_guard {
-    T func;
-    mutable bool moved_out;
-    
-    defer_guard& operator=(const defer_guard&);
-public:
-    explicit defer_guard(T func) :
-    func(func),
-    moved_out(false) { }
-
-    defer_guard(const defer_guard&) :
-    func(other.func) {
-        other.moved_out = true;
-    }
-
-    ~defer_guard() ITW_NOEXCEPT {
-#ifdef ITW_NOEXCEPT_SUPPORTED
-        static_assert(noexcept(func()),
-                "Please check that the defer block cannot throw, "
-                "and mark the lambda as 'noexcept'.");
-#endif
-        if (!moved_out) {
-            func();
-        }
-    }
-};
-
-template<typename T>
-defer_guard<T> defer(T func) {
-    return defer_guard<T>(func);
-}
-
-// "lambda" for C++98
-
-template<typename Func, typename Arg>
-class itw_lambda {
-    Func func;
-    Arg arg;
-public:
-    itw_lambda(Func func, Arg arg) :
-    func(func),
-    arg(arg) { }
-
-    void operator()() ITW_NOEXCEPT {
-        func(arg);
-    }
-};
-
-template<typename Func, typename Arg>
-itw_lambda<Func, Arg> make_itw_lambda(Func func, Arg arg) {
-    return itw_lambda<Func, Arg>(func, arg);
-}
-
-// forward declaration
-std::string errcode_to_string(unsigned long code) ITW_NOEXCEPT;
-
-// exception with message
-class itw_exception : public std::exception {
-protected:
-    std::string message;
-
-public:
-    itw_exception(const std::string& message) :
-    message(message) { }
-
-    virtual const char* what() const ITW_NOEXCEPT {
-        return message.c_str();
-    }
-};
-
-// implementation
-
-std::wstring widen(const std::string& st) {
-    if (st.empty()) return std::wstring();
-    int size_needed = ::MultiByteToWideChar(
-            CP_UTF8,
-            0,
-            st.c_str(),
-            static_cast<int>(st.length()),
-            nullptr,
-            0);
-    if (0 == size_needed) {
-        throw itw_exception(std::string("Error on string widen calculation,") +
-            " string: [" + st + "], error: [" + errcode_to_string(::GetLastError()) + "]");
-    }
-    auto res = std::wstring();
-    res.resize(size_needed);
-    int chars_copied = ::MultiByteToWideChar(
-            CP_UTF8,
-            0,
-            st.c_str(),
-            static_cast<int>(st.size()),
-            itw_addressof(res.front()),
-            size_needed);
-    if (chars_copied != size_needed) {
-        throw itw_exception(std::string("Error on string widen execution,") +
-            " string: [" + st + "], error: [" + errcode_to_string(::GetLastError()) + "]");
-    }
-    return res;
-}
-
-std::string narrow(const wchar_t* wstring, size_t length) {
-    if (0 == length) return std::string();
-    int size_needed = ::WideCharToMultiByte(
-            CP_UTF8,
-            0,
-            wstring,
-            static_cast<int>(length),
-            nullptr,
-            0,
-            nullptr,
-            nullptr);
-    if (0 == size_needed) {
-        throw itw_exception(std::string("Error on string narrow calculation,") +
-            " string length: [" + ojb::to_string(length) + "], error code: [" + ojb::to_string(::GetLastError()) + "]");
-    }
-    auto vec = std::vector<char>();
-    vec.resize(size_needed);
-    int bytes_copied = ::WideCharToMultiByte(
-            CP_UTF8,
-            0,
-            wstring,
-            static_cast<int>(length),
-            vec.data(),
-            size_needed,
-            nullptr,
-            nullptr);
-    if (bytes_copied != size_needed) {
-        throw itw_exception(std::string("Error on string narrow execution,") +
-            " string length: [" + ojb::to_string(vec.size()) + "], error code: [" + ojb::to_string(::GetLastError()) + "]");
-    }
-    return std::string(vec.begin(), vec.end());
-}
-
-std::string narrow(const std::wstring& wstring) {
-    return narrow(wstring.c_str(), wstring.length());
-}
-
-std::string errcode_to_string(unsigned long code) ITW_NOEXCEPT {
-    if (0 == code) {
-        return std::string();
-    }
-    wchar_t* buf = nullptr;
-    size_t size = ::FormatMessageW(
-            FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-            nullptr,
-            code,
-            MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), 
-            reinterpret_cast<wchar_t*>(&buf),
-            0,
-            nullptr);
-    if (0 == size) {
-        return "Cannot format code: [" + ojb::to_string(code) + "]" +
-            " into message, error code: [" + ojb::to_string(::GetLastError()) + "]";
-    }
-    auto deferred = defer(make_itw_lambda(::LocalFree, buf));
-    if (size <= 2) {
-        return "code: [" + ojb::to_string(code) + "], message: []";
-    }
-    try {
-        std::string msg = narrow(buf, size - 2);
-        return "code: [" + ojb::to_string(code) + "], message: [" + msg + "]";
-    } catch(const std::exception& e) {
-        return "Cannot format code: [" + ojb::to_string(code) + "]" +
-            " into message, narrow error: [" + e.what() + "]";
-    }
-}
 
 std::wstring load_resource_string(UINT id) {
     std::wstring wstr;
@@ -243,20 +57,20 @@ std::wstring load_resource_string(UINT id) {
     int loaded = ::LoadStringW(
         ITW_HANDLE_INSTANCE,
         id,
-        itw_addressof(wstr.front()),
+        ojb::addressof(wstr.front()),
         static_cast<int>(wstr.length()));
     if (loaded > 0) {
         wstr.resize(loaded);
         return wstr;
     } else {
         auto errres = std::string("ERROR_LOAD_RESOURCE_") + ojb::to_string(id);
-        return widen(errres);
+        return ojb::widen(errres);
     }
 }
 
 std::string load_resource_narrow(UINT id) {
     auto wide = load_resource_string(id);
-    return narrow(wide);
+    return ojb::narrow(wide);
 }
 
 std::string process_dir() {
@@ -267,10 +81,10 @@ std::string process_dir() {
             vec.data(),
             static_cast<DWORD>(vec.size()));
     if (0 == success) {
-        throw itw_exception(std::string("Error getting current executable dir,") +
-            " error: [" + errcode_to_string(::GetLastError()) + "]");
+        throw ojb::exception(std::string("Error getting current executable dir,") +
+            " error: [" + ojb::errcode_to_string(::GetLastError()) + "]");
     }
-    auto path = narrow(vec.data(), vec.size());
+    auto path = ojb::narrow(vec.data(), vec.size());
     std::replace(path.begin(), path.end(), '\\', '/');
     auto sid = path.rfind('/');
     return std::string::npos != sid ? path.substr(0, sid + 1) : path;
@@ -282,50 +96,50 @@ std::string userdata_dir() {
             FOLDERID_LocalAppData,
             KF_FLAG_CREATE,
             nullptr,
-            itw_addressof(wbuf));
+            ojb::addressof(wbuf));
     if (S_OK != err || nullptr == wbuf) {
-        throw itw_exception("Error getting userdata dir");
+        throw ojb::exception("Error getting userdata dir");
     }
-    auto deferred = defer(make_itw_lambda(::CoTaskMemFree, wbuf));
-    auto path = narrow(wbuf, ::wcslen(wbuf));
+    auto deferred = ojb::defer(ojb::make_lambda(::CoTaskMemFree, wbuf));
+    auto path = ojb::narrow(wbuf, ::wcslen(wbuf));
     std::replace(path.begin(), path.end(), '\\', '/');
     path.push_back('/');
     return path;
 }
 
 void create_dir(const std::string& dirpath) {
-    auto wpath = widen(dirpath);
+    auto wpath = ojb::widen(dirpath);
     BOOL err = ::CreateDirectoryW(
-            itw_addressof(wpath.front()),
+            ojb::addressof(wpath.front()),
             nullptr);
     if (0 == err && ERROR_ALREADY_EXISTS != ::GetLastError()) {
-        throw itw_exception(std::string("Error getting creating dir,") +
-            " path: [" + dirpath + "], error: [" + errcode_to_string(::GetLastError()) + "]");
+        throw ojb::exception(std::string("Error getting creating dir,") +
+            " path: [" + dirpath + "], error: [" + ojb::errcode_to_string(::GetLastError()) + "]");
     }
 }
 
 int start_process(const std::string& executable, const std::vector<std::string>& args, const std::string& out) {
     // open stdout file
-    auto wout = widen(out);
+    auto wout = ojb::widen(out);
     SECURITY_ATTRIBUTES sa;
-    std::memset(itw_addressof(sa), '\0', sizeof(SECURITY_ATTRIBUTES));
+    std::memset(ojb::addressof(sa), '\0', sizeof(SECURITY_ATTRIBUTES));
     sa.nLength = sizeof(sa);
     sa.lpSecurityDescriptor = nullptr;
     sa.bInheritHandle = TRUE; 
     HANDLE out_handle = ::CreateFileW(
-            itw_addressof(wout.front()), 
+            ojb::addressof(wout.front()),
             FILE_WRITE_DATA | FILE_APPEND_DATA,
             FILE_SHARE_WRITE | FILE_SHARE_READ,
-            itw_addressof(sa),
+            ojb::addressof(sa),
             CREATE_ALWAYS,
             FILE_ATTRIBUTE_NORMAL,
             nullptr);
     if (INVALID_HANDLE_VALUE == out_handle) {
-        throw itw_exception(std::string("Error opening log file descriptor,") + 
-                " message: [" + errcode_to_string(::GetLastError()) + "]," +
+        throw ojb::exception(std::string("Error opening log file descriptor,") +
+                " message: [" + ojb::errcode_to_string(::GetLastError()) + "]," +
                 " specified out path: [" + out + "]");
     }
-    auto deferred_outhandle = defer(make_itw_lambda(::CloseHandle, out_handle));
+    auto deferred_outhandle = ojb::defer(ojb::make_lambda(::CloseHandle, out_handle));
 
     // prepare list of handles to inherit
     // see: https://blogs.msdn.microsoft.com/oldnewthing/20111216-00/?p=8873
@@ -334,45 +148,45 @@ int start_process(const std::string& executable, const std::vector<std::string>&
             nullptr,
             1,
             0,
-            itw_addressof(tasize));
+            ojb::addressof(tasize));
     
     if (0 != err_tasize || ::GetLastError() != ERROR_INSUFFICIENT_BUFFER) {
-        throw itw_exception(std::string("Error preparing attrlist,") + 
-                " message: [" + errcode_to_string(::GetLastError()) + "]");
+        throw ojb::exception(std::string("Error preparing attrlist,") +
+                " message: [" + ojb::errcode_to_string(::GetLastError()) + "]");
     }
     auto talist = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(std::malloc(tasize));
     if (nullptr == talist) {
-        throw itw_exception(std::string("Error preparing attrlist,") + 
-                " message: [" + errcode_to_string(::GetLastError()) + "]");
+        throw ojb::exception(std::string("Error preparing attrlist,") +
+                " message: [" + ojb::errcode_to_string(::GetLastError()) + "]");
     }
-    auto deferred_talist = defer(make_itw_lambda(std::free, talist));
+    auto deferred_talist = ojb::defer(ojb::make_lambda(std::free, talist));
     auto err_ta = ::InitializeProcThreadAttributeList(
             talist,
             1,
             0,
-            itw_addressof(tasize));
+            ojb::addressof(tasize));
     if (0 == err_ta) {
-        throw itw_exception(std::string("Error initializing attrlist,") + 
-                " message: [" + errcode_to_string(::GetLastError()) + "]");
+        throw ojb::exception(std::string("Error initializing attrlist,") +
+                " message: [" + ojb::errcode_to_string(::GetLastError()) + "]");
     }
-    auto deferred_talist_delete = defer(make_itw_lambda(::DeleteProcThreadAttributeList, talist));
+    auto deferred_talist_delete = ojb::defer(ojb::make_lambda(::DeleteProcThreadAttributeList, talist));
     auto err_taset = ::UpdateProcThreadAttribute(
         talist,
         0,
         PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
-        itw_addressof(out_handle),
+        ojb::addressof(out_handle),
         sizeof(HANDLE),
         nullptr,
         nullptr); 
     if (0 == err_taset) {
-        throw itw_exception(std::string("Error filling attrlist,") + 
-                " message: [" + errcode_to_string(::GetLastError()) + "]");
+        throw ojb::exception(std::string("Error filling attrlist,") +
+                " message: [" + ojb::errcode_to_string(::GetLastError()) + "]");
     }
 
     // prepare process
     STARTUPINFOEXW si;
-    std::memset(itw_addressof(si), '\0', sizeof(STARTUPINFOEXW));
-    std::memset(itw_addressof(si.StartupInfo), '\0', sizeof(STARTUPINFOW));
+    std::memset(ojb::addressof(si), '\0', sizeof(STARTUPINFOEXW));
+    std::memset(ojb::addressof(si.StartupInfo), '\0', sizeof(STARTUPINFOW));
     si.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
     si.StartupInfo.hStdInput = nullptr;
     si.StartupInfo.hStdError = out_handle;
@@ -381,7 +195,7 @@ int start_process(const std::string& executable, const std::vector<std::string>&
     si.lpAttributeList = talist;
 
     PROCESS_INFORMATION pi;
-    std::memset(itw_addressof(pi), '\0', sizeof(PROCESS_INFORMATION));
+    std::memset(ojb::addressof(pi), '\0', sizeof(PROCESS_INFORMATION));
     std::string cmd_string = "\"" + executable + "\"";
     for (size_t i = 0; i < args.size(); i++) {
         cmd_string += " ";
@@ -395,28 +209,28 @@ int start_process(const std::string& executable, const std::vector<std::string>&
         out_handle,
         cmd_string_log.c_str(),
         static_cast<DWORD>(cmd_string_log.length()),
-        itw_addressof(bytes_written),
+        ojb::addressof(bytes_written),
         nullptr);
     if (0 == err_logcmd) {
-        throw itw_exception(std::string("Error logging cmdline,") + 
-                " message: [" + errcode_to_string(::GetLastError()) + "]");
+        throw ojb::exception(std::string("Error logging cmdline,") +
+                " message: [" + ojb::errcode_to_string(::GetLastError()) + "]");
     }
 
     // run process
-    auto wcmd = widen(cmd_string);
+    auto wcmd = ojb::widen(cmd_string);
     auto ret = ::CreateProcessW(
             nullptr, 
-            itw_addressof(wcmd.front()), 
+            ojb::addressof(wcmd.front()),
             nullptr, 
             nullptr, 
             true, 
             CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS | CREATE_UNICODE_ENVIRONMENT | EXTENDED_STARTUPINFO_PRESENT, 
             nullptr, 
             nullptr, 
-            itw_addressof(si.StartupInfo), 
-            itw_addressof(pi));
+            ojb::addressof(si.StartupInfo),
+            ojb::addressof(pi));
     if (0 == ret) {
-        throw itw_exception(std::string("Process create error: [") + errcode_to_string(::GetLastError()) + "]," +
+        throw ojb::exception(std::string("Process create error: [") + ojb::errcode_to_string(::GetLastError()) + "]," +
             " command line: [" + cmd_string + "]");
     }
     ::CloseHandle(pi.hThread);
@@ -441,7 +255,7 @@ HRESULT CALLBACK error_dialog_cb(HWND, UINT uNotification, WPARAM, LPARAM lParam
     if (!success) {
         std::wstring wtitle = load_resource_string(IDS_ERROR_DIALOG_TITLE);
         std::wstring werror = load_resource_string(IDS_BROWSER_ERROR_TEXT);
-        std::wstring wempty = widen(std::string());
+        std::wstring wempty = ojb::widen(std::string());
         ::TaskDialog(
                 nullptr,
                 ::GetModuleHandleW(nullptr),
@@ -459,7 +273,7 @@ void show_error_dialog(const std::string& error) {
     std::wstring wtitle = load_resource_string(IDS_ERROR_DIALOG_TITLE);
     std::string url = load_resource_narrow(IDS_ERROR_HELP_URL);
     auto link = std::string("<a href=\"") + url + "\">" + url + "</a>";
-    auto wlink = widen(link);
+    auto wlink = ojb::widen(link);
     auto noargs_msg = load_resource_narrow(IDS_NO_ARGS_ERROR_LABEL);
     auto header = std::string();
     if (noargs_msg == error) {
@@ -469,13 +283,13 @@ void show_error_dialog(const std::string& error) {
     }
     auto subheader = load_resource_narrow(IDS_ERROR_DIALOG_SUBHEADER);
     auto fullheader = header + "\n\n" + subheader;
-    std::wstring wmain = widen(fullheader);
-    std::wstring wexpanded = widen("Hide detailed error message");
-    std::wstring wcollapsed = widen("Show detailed error message");
-    std::wstring werror = widen(error);
+    std::wstring wmain = ojb::widen(fullheader);
+    std::wstring wexpanded = ojb::widen("Hide detailed error message");
+    std::wstring wcollapsed = ojb::widen("Show detailed error message");
+    std::wstring werror = ojb::widen(error);
 
     TASKDIALOGCONFIG cf;
-    std::memset(itw_addressof(cf), '\0', sizeof(TASKDIALOGCONFIG));
+    std::memset(ojb::addressof(cf), '\0', sizeof(TASKDIALOGCONFIG));
     cf.cbSize = sizeof(TASKDIALOGCONFIG);
     cf.hwndParent = nullptr;
     cf.hInstance = ::GetModuleHandleW(nullptr);
@@ -502,13 +316,13 @@ void show_error_dialog(const std::string& error) {
     cf.cxWidth = 0;
     
     ::TaskDialogIndirect(
-            itw_addressof(cf),
+            ojb::addressof(cf),
             nullptr,
             nullptr,
             nullptr);
 }
 
-void purge_work_dir() ITW_NOEXCEPT {
+void purge_work_dir() OJDKBUILD_NOEXCEPT {
     // find out dirs
     auto uddir = itw::userdata_dir();
     auto vendor_name = load_resource_narrow(IDS_VENDOR_DIRNAME);
@@ -518,7 +332,7 @@ void purge_work_dir() ITW_NOEXCEPT {
     auto ws_dir = app_dir + "/webstart";
 
     // prepare double-terminated path
-    auto ws_dir_wide = widen(ws_dir);
+    auto ws_dir_wide = ojb::widen(ws_dir);
     auto ws_dir_terminated = std::vector<wchar_t>();
     std::copy(ws_dir_wide.begin(), ws_dir_wide.end(), std::back_inserter(ws_dir_terminated));
     ws_dir_terminated.push_back('\0');
@@ -526,19 +340,19 @@ void purge_work_dir() ITW_NOEXCEPT {
 
     // delete webstart dir recursively
     SHFILEOPSTRUCTW shop;
-    std::memset(itw_addressof(shop), '\0', sizeof(SHFILEOPSTRUCTW));
+    std::memset(ojb::addressof(shop), '\0', sizeof(SHFILEOPSTRUCTW));
     shop.wFunc = FO_DELETE;
     shop.pFrom = ws_dir_terminated.data();
     shop.fFlags = FOF_NO_UI;
-    auto err_shop = ::SHFileOperationW(itw_addressof(shop));
+    auto err_shop = ::SHFileOperationW(ojb::addressof(shop));
     (void) err_shop;
 
     // try to delete other dirs only if there are
     // no contents from other installed components inside
-    auto app_dir_wide = widen(app_dir);
+    auto app_dir_wide = ojb::widen(app_dir);
     auto err_app = ::RemoveDirectoryW(app_dir_wide.c_str());
     (void) err_app;
-    auto vendor_dir_wide = widen(vendor_dir);
+    auto vendor_dir_wide = ojb::widen(vendor_dir);
     auto err_vendor = ::RemoveDirectoryW(vendor_dir_wide.c_str());
     (void) err_vendor;
 }
@@ -558,22 +372,22 @@ std::string prepare_webstart_dir() {
 
 std::vector<std::string> load_options(const std::string& optfile, const std::string& localdir,
         const std::string& wsdir, const std::string& jdkdir) {
-    auto woptfile = widen(optfile);
+    auto woptfile = ojb::widen(optfile);
 
     // check size
     WIN32_FILE_ATTRIBUTE_DATA fad;
-    std::memset(itw_addressof(fad), '\0', sizeof(WIN32_FILE_ATTRIBUTE_DATA));
-    auto atcode = ::GetFileAttributesExW(woptfile.c_str(), GetFileExInfoStandard, itw_addressof(fad));
+    std::memset(ojb::addressof(fad), '\0', sizeof(WIN32_FILE_ATTRIBUTE_DATA));
+    auto atcode = ::GetFileAttributesExW(woptfile.c_str(), GetFileExInfoStandard, ojb::addressof(fad));
     if (0 == atcode) {
-        throw itw_exception(std::string("Error opening options file,") +
+        throw ojb::exception(std::string("Error opening options file,") +
             " path: [" + optfile + "]" +
-            " error: [" + errcode_to_string(::GetLastError()) + "]");
+            " error: [" + ojb::errcode_to_string(::GetLastError()) + "]");
     }
     LARGE_INTEGER size;
     size.HighPart = fad.nFileSizeHigh;
     size.LowPart = fad.nFileSizeLow;
     if(size.QuadPart > (1<<20)) {
-        throw itw_exception(std::string("Options file max size exceeded,") +
+        throw ojb::exception(std::string("Options file max size exceeded,") +
             " path: [" + optfile + "]" +
             " size: [" + ojb::to_string(size.QuadPart) + "]");
     }
@@ -582,7 +396,7 @@ std::vector<std::string> load_options(const std::string& optfile, const std::str
     auto res = std::vector<std::string>();
     auto stream = std::ifstream(woptfile);
     if (!stream.is_open()) {
-        throw itw_exception(std::string("Error opening options file,") +
+        throw ojb::exception(std::string("Error opening options file,") +
                 " path: [" + optfile + "]");
     }
     auto line = std::string();
@@ -596,13 +410,13 @@ std::vector<std::string> load_options(const std::string& optfile, const std::str
         }
     }
     if (stream.bad()) {
-        throw itw_exception(std::string("Error reading options file,") +
+        throw ojb::exception(std::string("Error reading options file,") +
                 " path: [" + optfile + "]");
     }
     return res;
 }
 
-void migrate_webstart_dir() ITW_NOEXCEPT {
+void migrate_webstart_dir() OJDKBUILD_NOEXCEPT {
     // check dest dir doesn't exist
     auto uddir = userdata_dir();
     auto vendor_name = load_resource_narrow(IDS_VENDOR_DIRNAME);
@@ -610,7 +424,7 @@ void migrate_webstart_dir() ITW_NOEXCEPT {
     auto app_name = load_resource_narrow(IDS_APP_DIRNAME);
     auto app_dir = vendor_dir + app_name + "/";
     auto dest_dir = app_dir + "webstart/";
-    auto wdest_dir = widen(dest_dir);
+    auto wdest_dir = ojb::widen(dest_dir);
     auto dest_attrs = ::GetFileAttributesW(wdest_dir.c_str());
     if (INVALID_FILE_ATTRIBUTES != dest_attrs) {
         return;
@@ -620,25 +434,25 @@ void migrate_webstart_dir() ITW_NOEXCEPT {
     auto dirs_list = std::vector<std::string>();
     auto appdir_prefix = load_resource_narrow(IDS_MIGRATE_APPDIR_PREFIX);
     auto search_req = vendor_dir + appdir_prefix + "*";
-    auto wsearch_req = widen(search_req);
+    auto wsearch_req = ojb::widen(search_req);
     WIN32_FIND_DATAW ffd;
-    std::memset(itw_addressof(ffd), '\0', sizeof(WIN32_FIND_DATAW));
-    auto ha = ::FindFirstFileW(wsearch_req.c_str(), itw_addressof(ffd));
+    std::memset(ojb::addressof(ffd), '\0', sizeof(WIN32_FIND_DATAW));
+    auto ha = ::FindFirstFileW(wsearch_req.c_str(), ojb::addressof(ffd));
     if (INVALID_HANDLE_VALUE != ha) {
-        auto deferred = defer(make_itw_lambda(::FindClose, ha));
+        auto deferred = ojb::defer(ojb::make_lambda(::FindClose, ha));
         do {
             auto wname = std::wstring(ffd.cFileName);
-            auto name = narrow(wname);
+            auto name = ojb::narrow(wname);
             if ((ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
                 auto adir = vendor_dir + name + "/";
                 auto wa_dir = adir + "webstart/";
-                auto wwa_dir = widen(wa_dir);
+                auto wwa_dir = ojb::widen(wa_dir);
                 auto wa_attrs = ::GetFileAttributesW(wwa_dir.c_str());
                 if ((INVALID_FILE_ATTRIBUTES != wa_attrs) && (wa_attrs & FILE_ATTRIBUTE_DIRECTORY)) {
                     dirs_list.push_back(name);
                 }
             }
-        } while(0 != ::FindNextFile(ha, itw_addressof(ffd)));
+        } while(0 != ::FindNextFile(ha, ojb::addressof(ffd)));
     }
     if (0 == dirs_list.size()) {
         return;
@@ -653,12 +467,12 @@ void migrate_webstart_dir() ITW_NOEXCEPT {
     // migrate the most recent version
     create_dir(vendor_dir);
     create_dir(app_dir);
-    auto wsrc_dir = widen(src_dir);
+    auto wsrc_dir = ojb::widen(src_dir);
     auto err_move = ::MoveFileW(wsrc_dir.c_str(), wdest_dir.c_str());
 
     // cleanup
     if (0 != err_move) {
-        auto wold_app_dir = widen(old_app_dir);
+        auto wold_app_dir = ojb::widen(old_app_dir);
         auto err_old_app = ::RemoveDirectoryW(wold_app_dir.c_str());
         (void) err_old_app;
     }
@@ -667,8 +481,8 @@ void migrate_webstart_dir() ITW_NOEXCEPT {
     auto ru_dir = dest_dir + ".cache/icedtea-web/cache/";
     auto ru_path = ru_dir + "recently_used";
     auto ru_bak_path = ru_path + "." + old_app_name;
-    auto wru_path = widen(ru_path);
-    auto wru_bak_path = widen(ru_bak_path);
+    auto wru_path = ojb::widen(ru_path);
+    auto wru_bak_path = ojb::widen(ru_bak_path);
     auto err_bak = ::MoveFileW(wru_path.c_str(), wru_bak_path.c_str());
     if (0 == err_bak) {
         return;
@@ -701,7 +515,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR lpCmdLine, int) {
         auto cline = std::string(lpCmdLine);
         if (cline.empty()) {
             std::string msg = itw::load_resource_narrow(IDS_NO_ARGS_ERROR_LABEL);
-            throw itw::itw_exception(msg);
+            throw ojb::exception(msg);
         } else if ("-d" == cline) {
             itw::purge_work_dir();
             return 0;
