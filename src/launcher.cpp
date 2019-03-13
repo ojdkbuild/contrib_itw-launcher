@@ -17,14 +17,11 @@
 #include "launcher.hpp"
 
 #include <stdint.h>
-#include <cctype>
 #include <cstdlib>
 #include <cstring>
 #include <algorithm>
-#include <exception>
 #include <fstream>
 #include <iterator>
-#include <sstream>
 #include <string>
 #include <vector>
 
