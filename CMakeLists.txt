@@ -31,6 +31,8 @@ set ( ${PROJECT_NAME}_ERROR_DIALOG_SUBHEADER_LABEL "Please follow the link below
 set ( ${PROJECT_NAME}_NO_ARGS_ERROR_HEADER "This application is not intended to be used directly. Please run JNLP from a web-browser or from a file explorer." CACHE STRING "Error header on no arguments given" )
 set ( ${PROJECT_NAME}_NO_ARGS_ERROR_LABEL "No arguments specified. Please specify a path (or URL) to JNLP file or a 'jnlp://' URL." CACHE STRING "Error message on no arguments given" )
 set ( ${PROJECT_NAME}_MIGRATE_APPDIR_PREFIX "java-1.8.0-openjdk-1.8.0." CACHE STRING "Prefix of the application directory that can be used as a source to migrate old data" )
+# test options
+set ( ${PROJECT_NAME}_ENABLE_TEST ON CACHE BOOL "Built test app and allow to run a test with it" )
 
 # resources
 configure_file ( ${CMAKE_CURRENT_LIST_DIR}/resources/launcher.rc
@@ -64,3 +66,29 @@ target_link_libraries ( javaws
         advapi32 )
         
 set_property ( TARGET javaws APPEND_STRING PROPERTY LINK_FLAGS "/manifest:no" )
+
+if ( ${PROJECT_NAME}_ENABLE_TEST )
+
+    add_executable ( ${PROJECT_NAME}_test WIN32
+            test/launcher_test.cpp )
+
+    target_include_directories ( ${PROJECT_NAME}_test BEFORE PRIVATE
+            ${${PROJECT_NAME}_DEPS_PC_INCLUDE_DIRS} )
+
+    target_link_libraries ( ${PROJECT_NAME}_test
+            ojdkbuild_utils
+            shell32 )
+
+    add_custom_target ( ${PROJECT_NAME}_test_run
+            COMMAND ${CMAKE_COMMAND} -E remove_directory ${PROJECT_NAME}_test_scratch
+            COMMAND ${CMAKE_COMMAND} -E make_directory ${PROJECT_NAME}_test_scratch/jdk
+            COMMAND ${CMAKE_COMMAND} -E make_directory ${PROJECT_NAME}_test_scratch/jdk/bin
+            COMMAND ${CMAKE_COMMAND} -E make_directory ${PROJECT_NAME}_test_scratch/jdk/webstart
+            COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/javaws.exe ${PROJECT_NAME}_test_scratch/jdk/webstart/javaws.exe
+            COMMAND ${CMAKE_COMMAND} -E copy javaws_options.txt ${PROJECT_NAME}_test_scratch/jdk/webstart/javaws_options.txt
+            COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${PROJECT_NAME}_test.exe ${PROJECT_NAME}_test_scratch/jdk/bin/java.exe
+            COMMAND ${PROJECT_NAME}_test_scratch/jdk/webstart/javaws.exe foo "bar baz"
+            DEPENDS javaws ${PROJECT_NAME}_test
+            WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+            COMMENT "Running launcher test ..." )
+endif ( )

@@ -25,12 +25,7 @@
 #include <string>
 #include <vector>
 
-#define UNICODE
-#define _UNICODE
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif // NOMINMAX
-#include <windows.h>
+#include "ojdkbuild/utils/windows.hpp"
 #include <commctrl.h>
 #include <shlobj.h>
 #include <shellapi.h>
@@ -68,23 +63,6 @@ std::wstring load_resource_string(UINT id) {
 std::string load_resource_narrow(UINT id) {
     auto wide = load_resource_string(id);
     return ojb::narrow(wide);
-}
-
-std::string process_dir() {
-    auto vec = std::vector<wchar_t>();
-    vec.resize(MAX_PATH);
-    auto success = ::GetModuleFileNameW(
-            nullptr,
-            vec.data(),
-            static_cast<DWORD>(vec.size()));
-    if (0 == success) {
-        throw ojb::exception(std::string("Error getting current executable dir,") +
-            " error: [" + ojb::errcode_to_string(::GetLastError()) + "]");
-    }
-    auto path = ojb::narrow(vec.data(), vec.size());
-    std::replace(path.begin(), path.end(), '\\', '/');
-    auto sid = path.rfind('/');
-    return std::string::npos != sid ? path.substr(0, sid + 1) : path;
 }
 
 std::string userdata_dir() {
@@ -520,7 +498,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR lpCmdLine, int) {
             itw::migrate_webstart_dir();
             return 0;
         }
-        auto localdir = itw::process_dir();
+        auto localdir = ojb::current_executable_dir();
         auto wsdir = itw::prepare_webstart_dir();
         auto jdkdir = localdir + "../";
         std::vector<std::string> args;
