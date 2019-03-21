@@ -22,7 +22,7 @@ set ( ${PROJECT_NAME}_FILE_VERSION "1.${openjdk_MAJOR_VERSION}.0.${openjdk_UPDAT
 set ( ${PROJECT_NAME}_COMPANY_NAME_LABEL "${openjdk_VENDOR}" CACHE STRING "Company name version field" )
 set ( ${PROJECT_NAME}_FILE_DESCRIPTION_JAVAWS "${openjdk_VENDOR_SHORT} WebStart Launcher" CACHE STRING "Launcher description" )
 set ( ${PROJECT_NAME}_PRODUCT_VERSION "${${PROJECT_NAME}_FILE_VERSION}" CACHE STRING "Product version field" )
-set ( ${PROJECT_NAME}_MANIFEST_PATH ${CMAKE_CURRENT_LIST_DIR}/resources/launcher.manifest CACHE STRING "Path to checker manifest" )
+set ( ${PROJECT_NAME}_MANIFEST_PATH ${CMAKE_CURRENT_LIST_DIR}/resources/launcher.manifest CACHE STRING "Path to launcher manifest" )
 set ( ${PROJECT_NAME}_ERROR_DIALOG_TITLE_LABEL "${openjdk_VENDOR_SHORT} WebStart error" CACHE STRING "Error dialog title" )
 set ( ${PROJECT_NAME}_BROWSER_ERROR_TEXT_LABEL "Error starting default web-browser" CACHE STRING "Browser start error" )
 set ( ${PROJECT_NAME}_ERROR_HELP_URL_LABEL "https://github.com/ojdkbuild/ojdkbuild/wiki/WebStart" CACHE STRING "Help URL" )
@@ -41,9 +41,7 @@ configure_file ( ${CMAKE_CURRENT_LIST_DIR}/resources/javaws_options.txt
         ${CMAKE_CURRENT_BINARY_DIR}/javaws_options.txt )
 
 # dependencies
-add_subdirectory ( ${CMAKE_CURRENT_LIST_DIR}/../ojdkbuild-utils ojdkbuild_utils )
-set_target_properties ( ojdkbuild_utils PROPERTIES FOLDER "deps" )
-
+ojdkbuild_add_subdirectory ( ${OJDKBUILD_DIR}/contrib/ojdkbuild-utils ojdkbuild_utils )
 set ( ${PROJECT_NAME}_DEPS ojdkbuild_utils )
 ojdkbuild_pkg_check_modules ( ${PROJECT_NAME}_DEPS_PC REQUIRED ${PROJECT_NAME}_DEPS )
 

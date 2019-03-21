@@ -65,23 +65,6 @@ std::string load_resource_narrow(UINT id) {
     return ojb::narrow(wide);
 }
 
-std::string userdata_dir() {
-    wchar_t* wbuf = nullptr;
-    auto err = ::SHGetKnownFolderPath(
-            FOLDERID_LocalAppData,
-            KF_FLAG_CREATE,
-            nullptr,
-            ojb::addressof(wbuf));
-    if (S_OK != err || nullptr == wbuf) {
-        throw ojb::exception("Error getting userdata dir");
-    }
-    auto deferred = ojb::defer(ojb::make_lambda(::CoTaskMemFree, wbuf));
-    auto path = ojb::narrow(wbuf, ::wcslen(wbuf));
-    std::replace(path.begin(), path.end(), '\\', '/');
-    path.push_back('/');
-    return path;
-}
-
 void create_dir(const std::string& dirpath) {
     auto wpath = ojb::widen(dirpath);
     BOOL err = ::CreateDirectoryW(
@@ -299,7 +282,7 @@ void show_error_dialog(const std::string& error) {
 
 void purge_work_dir() OJDKBUILD_NOEXCEPT {
     // find out dirs
-    auto uddir = itw::userdata_dir();
+    auto uddir = ojb::localappdata_dir();
     auto vendor_name = load_resource_narrow(IDS_VENDOR_DIRNAME);
     auto vendor_dir = uddir + vendor_name;
     auto app_name = load_resource_narrow(IDS_APP_DIRNAME);
@@ -333,7 +316,7 @@ void purge_work_dir() OJDKBUILD_NOEXCEPT {
 }
 
 std::string prepare_webstart_dir() {
-    auto uddir = userdata_dir();
+    auto uddir = ojb::localappdata_dir();
     auto vendor_name = load_resource_narrow(IDS_VENDOR_DIRNAME);
     auto vendor_dir = uddir + vendor_name;
     create_dir(vendor_dir);
@@ -393,7 +376,7 @@ std::vector<std::string> load_options(const std::string& optfile, const std::str
 
 void migrate_webstart_dir() OJDKBUILD_NOEXCEPT {
     // check dest dir doesn't exist
-    auto uddir = userdata_dir();
+    auto uddir = ojb::localappdata_dir();
     auto vendor_name = load_resource_narrow(IDS_VENDOR_DIRNAME);
     auto vendor_dir = uddir + vendor_name + "/";
     auto app_name = load_resource_narrow(IDS_APP_DIRNAME);
