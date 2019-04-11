@@ -2,9 +2,9 @@
 # Web Start launch options
 #
 # variables:
-# - localdir: path directory where javaws.exe resides
+# - localdir: path to directory where javaws.exe resides
 # - jdkdir: path to JDK directory
-# - wsdir: path to the directory where ITW config and cache are stored
+# - wsdir: path to directory where ITW config and cache are stored
 
 # JVM options, emulated client, see https://developers.redhat.com/blog/2017/04/04/openjdk-and-containers/
 -XX:+TieredCompilation
