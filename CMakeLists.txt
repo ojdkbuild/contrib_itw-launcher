@@ -80,11 +80,12 @@ if ( ${PROJECT_NAME}_ENABLE_TEST )
     add_custom_target ( ${PROJECT_NAME}_test_run
             COMMAND ${CMAKE_COMMAND} -E remove_directory ${PROJECT_NAME}_test_scratch
             COMMAND ${CMAKE_COMMAND} -E make_directory ${PROJECT_NAME}_test_scratch/jdk
-            COMMAND ${CMAKE_COMMAND} -E make_directory ${PROJECT_NAME}_test_scratch/jdk/bin
+            COMMAND ${CMAKE_COMMAND} -E make_directory ${PROJECT_NAME}_test_scratch/jdk/jre
+            COMMAND ${CMAKE_COMMAND} -E make_directory ${PROJECT_NAME}_test_scratch/jdk/jre/bin
             COMMAND ${CMAKE_COMMAND} -E make_directory ${PROJECT_NAME}_test_scratch/jdk/webstart
             COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/javaws.exe ${PROJECT_NAME}_test_scratch/jdk/webstart/javaws.exe
             COMMAND ${CMAKE_COMMAND} -E copy javaws_options.txt ${PROJECT_NAME}_test_scratch/jdk/webstart/javaws_options.txt
-            COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${PROJECT_NAME}_test.exe ${PROJECT_NAME}_test_scratch/jdk/bin/java.exe
+            COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${PROJECT_NAME}_test.exe ${PROJECT_NAME}_test_scratch/jdk/jre/bin/java.exe
             COMMAND ${PROJECT_NAME}_test_scratch/jdk/webstart/javaws.exe foo "bar baz"
             DEPENDS javaws ${PROJECT_NAME}_test
             WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}

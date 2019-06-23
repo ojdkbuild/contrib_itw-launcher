@@ -29,11 +29,10 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR lpCmdLine, int) {
 
     // expected options
     auto exedir = ojb::current_executable_dir();
-    auto sid = exedir.substr(0, exedir.length() - 1).rfind('/');
-    auto basedir = exedir.substr(0, sid + 1);
+    auto basedir = exedir.substr(0, exedir.length() - 8); // jre/bin/
     auto jdkdir = basedir + "webstart/../";
     auto localdir = basedir + "webstart/";
-    auto optfile = exedir + "../webstart/javaws_options.txt";
+    auto optfile = exedir + "../../webstart/javaws_options.txt";
     auto woptfile = ojb::widen(optfile);
     auto expected = std::vector<std::string>();
     {

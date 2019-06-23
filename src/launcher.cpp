@@ -488,7 +488,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR lpCmdLine, int) {
         auto opts = itw::load_options(localdir + "javaws_options.txt", localdir, wsdir, jdkdir);
         std::copy(opts.begin(), opts.end(), std::back_inserter(args));
         args.push_back(cline);
-        itw::start_process(jdkdir + "bin/java.exe", args, wsdir + "javaws_last_log.txt");
+        itw::start_process(jdkdir + "jre/bin/java.exe", args, wsdir + "javaws_last_log.txt");
         return 0;
     } catch (const std::exception& e) {
         itw::show_error_dialog(e.what());
