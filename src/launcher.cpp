@@ -465,12 +465,33 @@ void migrate_webstart_dir() OJDKBUILD_NOEXCEPT {
     (void) err_del;
 }
 
+std::string get_command_line() {
+    auto wptr = ::GetCommandLineW();
+    int num = 0;
+    auto wargs = ::CommandLineToArgvW(wptr, ojb::addressof(num));
+    if (NULL == wargs) {
+        throw ojb::exception(std::string("Error tokenizing command line: [") + ojb::errcode_to_string(::GetLastError()) + "]");
+    }
+    auto deferred = ojb::defer(ojb::make_lambda(::LocalFree, wargs));
+    if (num <= 1) {
+        return std::string();
+    }
+    auto wcline = std::wstring();
+    for (int i = 1; i < num; i++) {
+        wcline.append(ojb::widen("\""));
+        wcline.append(wargs[i]);
+        wcline.append(ojb::widen("\""));
+        wcline.append(ojb::widen(" "));
+    }
+    return ojb::narrow(wcline);
+}
+
 } // namespace
 
-int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR lpCmdLine, int) {
+int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
     ITW_HANDLE_INSTANCE = hInstance;
     try {
-        auto cline = std::string(lpCmdLine);
+        auto cline = itw::get_command_line();
         if (cline.empty()) {
             std::string msg = itw::load_resource_narrow(IDS_NO_ARGS_ERROR_LABEL);
             throw ojb::exception(msg);
