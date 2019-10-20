@@ -481,7 +481,9 @@ std::string get_command_line() {
         wcline.append(ojb::widen("\""));
         wcline.append(wargs[i]);
         wcline.append(ojb::widen("\""));
-        wcline.append(ojb::widen(" "));
+        if (i < num - 1) {
+            wcline.append(ojb::widen(" "));
+        }
     }
     return ojb::narrow(wcline);
 }
@@ -495,10 +497,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
         if (cline.empty()) {
             std::string msg = itw::load_resource_narrow(IDS_NO_ARGS_ERROR_LABEL);
             throw ojb::exception(msg);
-        } else if ("-d" == cline) {
+        } else if ("\"-d\"" == cline) {
             itw::purge_work_dir();
             return 0;
-        } else if ("-m" == cline) {
+        } else if ("\"-m\"" == cline) {
             itw::migrate_webstart_dir();
             return 0;
         }
