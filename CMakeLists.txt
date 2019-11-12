@@ -38,7 +38,8 @@ set ( ${PROJECT_NAME}_ENABLE_TEST ON CACHE BOOL "Built test app and allow to run
 configure_file ( ${CMAKE_CURRENT_LIST_DIR}/resources/launcher.rc
         ${CMAKE_CURRENT_BINARY_DIR}/launcher.rc )
 configure_file ( ${CMAKE_CURRENT_LIST_DIR}/resources/javaws_options.txt
-        ${CMAKE_CURRENT_BINARY_DIR}/javaws_options.txt )
+        ${CMAKE_CURRENT_BINARY_DIR}/javaws_options.txt
+        NEWLINE_STYLE CRLF )
 
 # dependencies
 ojdkbuild_add_subdirectory ( ${OJDKBUILD_DIR}/contrib/ojdkbuild-utils ojdkbuild_utils )
