@@ -38,6 +38,13 @@
 #define TDF_SIZE_TO_CONTENT 0x1000000
 #endif
 
+#define ITW_QUOTE(value) #value
+#define ITW_STR(value) ITW_QUOTE(value)
+#ifndef ITW_JAVAWS_OPTIONS_FILE
+#define ITW_JAVAWS_OPTIONS_FILE OJDKBUILD_JAVAWS_OPTIONS_FILE
+#endif // ITW_JAVAWS_OPTIONS_FILE
+#define ITW_JAVAWS_OPTIONS_FILE_STR ITW_STR(ITW_JAVAWS_OPTIONS_FILE)
+
 const size_t ITW_MAX_RC_LEN = 1 << 12;
 HINSTANCE ITW_HANDLE_INSTANCE = nullptr;
 
@@ -328,8 +335,10 @@ std::string prepare_webstart_dir() {
     return ws_dir;
 }
 
-std::vector<std::string> load_options(const std::string& optfile, const std::string& localdir,
-        const std::string& wsdir, const std::string& jdkdir) {
+std::vector<std::string> load_options(const std::string& localdir, const std::string& wsdir,
+        const std::string& jdkdir) {
+    auto envpath = ojb::get_env(ITW_JAVAWS_OPTIONS_FILE_STR);
+    auto optfile = !envpath.empty() ? envpath : localdir + "javaws_options.txt";
     auto woptfile = ojb::widen(optfile);
 
     // check size
@@ -508,7 +517,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
         auto wsdir = itw::prepare_webstart_dir();
         auto jdkdir = localdir + "../";
         std::vector<std::string> args;
-        auto opts = itw::load_options(localdir + "javaws_options.txt", localdir, wsdir, jdkdir);
+        auto opts = itw::load_options(localdir, wsdir, jdkdir);
         std::copy(opts.begin(), opts.end(), std::back_inserter(args));
         args.push_back(cline);
         itw::start_process(jdkdir + "jre/bin/java.exe", args, wsdir + "javaws_last_log.txt");

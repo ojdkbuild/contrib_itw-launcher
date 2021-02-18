@@ -31,6 +31,7 @@ set ( ${PROJECT_NAME}_ERROR_DIALOG_SUBHEADER_LABEL "Please follow the link below
 set ( ${PROJECT_NAME}_NO_ARGS_ERROR_HEADER "This application is not intended to be used directly. Please run JNLP from a web-browser or from a file explorer." CACHE STRING "Error header on no arguments given" )
 set ( ${PROJECT_NAME}_NO_ARGS_ERROR_LABEL "No arguments specified. Please specify a path (or URL) to JNLP file or a 'jnlp://' URL." CACHE STRING "Error message on no arguments given" )
 set ( ${PROJECT_NAME}_MIGRATE_APPDIR_PREFIX "java-1.8.0-openjdk-1.8.0." CACHE STRING "Prefix of the application directory that can be used as a source to migrate old data" )
+set ( ${PROJECT_NAME}_OPTIONS_FILE_ENV_VAR "OJDKBUILD_JAVAWS_OPTIONS_FILE" CACHE STRING "Environment variable that points to the custom location of javaws_options.txt file" )
 # test options
 set ( ${PROJECT_NAME}_ENABLE_TEST ON CACHE BOOL "Built test app and allow to run a test with it" )
 
@@ -55,7 +56,12 @@ target_include_directories ( javaws BEFORE PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}/src
         ${${PROJECT_NAME}_DEPS_PC_INCLUDE_DIRS} )
 
-target_compile_options ( javaws PRIVATE /W4 /WX )
+target_compile_options ( javaws PRIVATE
+        /W4
+        /WX )
+
+target_compile_definitions ( javaws PRIVATE
+        -DITW_JAVAWS_OPTIONS_FILE=${${PROJECT_NAME}_OPTIONS_FILE_ENV_VAR} )
 
 target_link_libraries ( javaws
         ojdkbuild_utils
@@ -68,6 +74,10 @@ set_property ( TARGET javaws APPEND_STRING PROPERTY LINK_FLAGS "/manifest:no" )
 
 if ( ${PROJECT_NAME}_ENABLE_TEST )
 
+    configure_file ( ${CMAKE_CURRENT_LIST_DIR}/test/test_env.bat
+            ${CMAKE_CURRENT_BINARY_DIR}/test_env.bat
+            NEWLINE_STYLE CRLF )
+
     add_executable ( ${PROJECT_NAME}_test WIN32
             test/launcher_test.cpp )
 
@@ -78,7 +88,7 @@ if ( ${PROJECT_NAME}_ENABLE_TEST )
             ojdkbuild_utils
             shell32 )
 
-    add_custom_target ( ${PROJECT_NAME}_test_run
+    add_custom_target ( ${PROJECT_NAME}_test_dist
             COMMAND ${CMAKE_COMMAND} -E remove_directory ${PROJECT_NAME}_test_scratch
             COMMAND ${CMAKE_COMMAND} -E make_directory ${PROJECT_NAME}_test_scratch/jdk
             COMMAND ${CMAKE_COMMAND} -E make_directory ${PROJECT_NAME}_test_scratch/jdk/jre
@@ -87,8 +97,20 @@ if ( ${PROJECT_NAME}_ENABLE_TEST )
             COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/javaws.exe ${PROJECT_NAME}_test_scratch/jdk/webstart/javaws.exe
             COMMAND ${CMAKE_COMMAND} -E copy javaws_options.txt ${PROJECT_NAME}_test_scratch/jdk/webstart/javaws_options.txt
             COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${PROJECT_NAME}_test.exe ${PROJECT_NAME}_test_scratch/jdk/jre/bin/java.exe
-            COMMAND ${PROJECT_NAME}_test_scratch/jdk/webstart/javaws.exe foo "bar baz"
             DEPENDS javaws ${PROJECT_NAME}_test
             WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+            COMMENT "Preparing test dist ..." )
+
+    add_custom_target ( ${PROJECT_NAME}_test_run
+            COMMAND ${PROJECT_NAME}_test_scratch/jdk/webstart/javaws.exe foo "bar baz"
+            DEPENDS ${PROJECT_NAME}_test_dist
+            WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
             COMMENT "Running launcher test ..." )
+
+    add_custom_target ( ${PROJECT_NAME}_test_run_env
+            COMMAND cmd /c test_env.bat
+                    ${PROJECT_NAME}_test_scratch\\jdk\\webstart\\javaws.exe foo "bar baz"
+            DEPENDS ${PROJECT_NAME}_test_dist
+            WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+            COMMENT "Running launcher env test ..." )
 endif ( )
